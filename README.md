@@ -60,6 +60,7 @@ Then run **Developer: Reload Window** (Command Palette). Reloading is required a
 |---|---|---|
 | `xschem.libraryPaths` | `[]` | `XSCHEM_LIBRARY_PATH`-style search roots. A ref `foo/bar.sym` is looked up as `<root>/foo/bar.sym`. Supports `${env:VAR}`, `~`, `${workspaceFolder:NAME}`, and bare `${workspaceFolder}`. Non-existent entries are skipped. |
 | `xschem.autoDetectXschemrc` | `true` | Walk up from the schematic to the workspace root, adding any directory that contains an `xschemrc` as a search root. Resolves in-repo `shared/…` and sibling blocks with no configuration. |
+| `xschem.followXschemrcPdkSource` | `false` | **Opt-in.** Follow an `xschemrc`'s `source …/libs.tech/xschem/xschemrc` line to add that PDK's library directory (see [below](#following-a-pdk-source-line)). Only **open** PDKs are followed. |
 | `xschem.includeWorkspaceFolders` | `false` | When on, also expose the schematic's **own** workspace folder (for relative `../` refs). Off keeps the webview's read scope minimal. |
 | `xschem.resolveDebug` | `false` | Log every symbol-resolution attempt to the webview Dev Tools console (*Help ▸ Toggle Developer Tools*). |
 
@@ -86,6 +87,36 @@ Absolute paths are always unambiguous:
 > the opened schematic's **own** (innermost) folder — e.g. a submodule root, not the meta-root.
 > Use `${workspaceFolder:NAME}` when you need a specific named folder.
 
+### Following a PDK `source` line
+
+Most repos don't list PDK symbols in their `xschemrc` — they pull the PDK in:
+
+```tcl
+set ::env(PDK) ihp-sg13g2
+source $env(PDK_ROOT)/$env(PDK)/libs.tech/xschem/xschemrc
+```
+
+That line points **outside** your workspace, so it is skipped by default. Turn on
+`xschem.followXschemrcPdkSource` to follow it and pick up `$PDK_ROOT/$PDK/libs.tech/xschem`
+automatically, instead of listing the path yourself in `xschem.libraryPaths`:
+
+```jsonc
+"xschem.followXschemrcPdkSource": true
+```
+
+Three gates apply, because this is the one place the extension reads out of tree:
+
+1. It's **opt-in** — off unless you enable it.
+2. Only **open** PDKs are followed: the `…/<pdk>/libs.tech/xschem` segment of the *resolved* path
+   must be `sky130*`, `gf180mcu*`, `ihp-sg13g2`, or `sg13g2`. A proprietary foundry kit is refused
+   even if it's installed. Gating on the resolved path means an `xschemrc` can't claim an open PDK
+   name and then resolve elsewhere.
+3. Every variable must expand — an unset `PDK_ROOT` is a refusal, not a path rooted at `/` — and the
+   directory must exist.
+
+Only the PDK's `libs.tech/xschem` directory is exposed to the webview, never `$PDK_ROOT` itself.
+Enable `xschem.resolveDebug` to see what was followed or refused.
+
 ## Build the VSIX from source
 
 Requires `node` and `zip`:
@@ -95,6 +126,28 @@ Requires `node` and `zip`:
 ```
 
 This regenerates `xschem-viewer-configurable-<version>.vsix` from the tree.
+
+## Rebuild the viewer from TypeScript source
+
+`dist/assets/index.js` is not hand-edited — it is reproducible from the upstream TypeScript sources.
+The viewer's WebAssembly is checked into upstream's repo, so this needs only Node (no emscripten):
+
+```bash
+./build-from-source.sh              # clone pinned upstream, patch, build, diff — stages only
+./build-from-source.sh --install    # overwrite dist/assets, then run npm test
+```
+
+The resolver change lives as a readable patch in [`patches/xschem-viewer/`](patches/xschem-viewer/)
+— the same patch offered upstream (see [docs/UPSTREAMING.md](docs/UPSTREAMING.md)).
+
+## Optional: IHP test galleries
+
+IHP's `sg13g2_tests` example schematics aren't bundled, to keep the install lean. Fetch them when
+you need them (git-ignored, and excluded from the VSIX):
+
+```bash
+npm run fetch:ihp-tests             # or: scripts/fetch-ihp-testlibs.sh --remove
+```
 
 ## Tests
 
@@ -107,11 +160,26 @@ npm test
 
 - `test/resolver.test.cjs` — symbol resolution (bundled sky130/IHP/devices, configured roots,
   schematic-relative, absolute refs, and refusals).
-- `test/config.test.cjs` — variable expansion, library-dir resolution, `xschemrc`-append parsing.
-- `test/manifest.test.cjs` — manifest, bundle integrity, and that the patches are intact.
+- `test/config.test.cjs` — variable expansion, library-dir resolution, `xschemrc`-append parsing,
+  and the open-PDK `source`-following gates.
+- `test/manifest.test.cjs` — manifest, bundle integrity, that the patches are intact, and that every
+  fixture is valid xschem.
 
 CI runs the suite on Node 18/20/22 and builds the VSIX on every push/PR
 (`.github/workflows/ci.yml`).
+
+### Render smoke test
+
+`npm test` proves symbols *resolve*; it does not prove the viewer *draws*. The smoke test drives the
+real WASM viewer in headless Chromium and checks the canvas actually has pixels:
+
+```bash
+npm i --no-save playwright && npx playwright install --with-deps chromium
+npm run test:smoke
+```
+
+It needs a browser, so it is kept out of `npm test` (which stays dependency-free) and runs in its
+own workflow (`.github/workflows/smoke.yml`).
 
 ## Attribution & license
 

@@ -35,12 +35,59 @@ rather than throwing.
 |---|---|---|
 | `xschem.libraryPaths` | `[]` | Ordered `XSCHEM_LIBRARY_PATH`-style roots. Variables: `${env:VAR}`, `~`, `${workspaceFolder:NAME}` (named multi-root folder), bare `${workspaceFolder}` (schematic's own/innermost folder). Relative entries resolve against the schematic's workspace folder. Entries that aren't existing directories are skipped (logged under `resolveDebug`). |
 | `xschem.autoDetectXschemrc` | `true` | Walks up from the schematic's directory to the workspace root and adds every directory containing an `xschemrc` file. It also parses that file's `append XSCHEM_LIBRARY_PATH` lines, resolving the `[file dirname [info script]]` idiom to the rc's directory. Lines using `$env(...)` or `source` (i.e. a foundry/PDK `xschemrc` that may point out of tree) are skipped, and parsed roots are only added if they exist and lie inside the workspace — so out-of-tree PDKs stay opt-in via `xschem.libraryPaths`. |
+| `xschem.followXschemrcPdkSource` | `false` | **Opt-in.** Follows an `xschemrc`'s `source …/libs.tech/xschem/xschemrc` line to add that PDK's library directory. Deliberately reaches outside the workspace, so it is gated three ways (below). |
 | `xschem.includeWorkspaceFolders` | `false` | When enabled, adds only the schematic's own workspace folder to the webview's allowed roots (relative `../` sub-block refs). Off by default to keep the read scope minimal. |
 | `xschem.resolveDebug` | `false` | Logs each resolution attempt and skipped path to the webview console. |
 
+## Following a PDK `source` line (opt-in)
+
+A repo's `xschemrc` typically pulls in its PDK rather than listing the PDK's symbols itself:
+
+```tcl
+set ::env(PDK) ihp-sg13g2
+source $env(PDK_ROOT)/$env(PDK)/libs.tech/xschem/xschemrc
+```
+
+`xschem.autoDetectXschemrc` deliberately **skips** `source` lines, because they point outside the
+workspace. Enabling `xschem.followXschemrcPdkSource` follows them, adding
+`$PDK_ROOT/$PDK/libs.tech/xschem` as a search root so PDK devices resolve with no manual path entry.
+
+Because this is the one place the extension reaches out of tree, it is gated three ways:
+
+1. **Opt-in** — off by default; `xschem.libraryPaths` remains the explicit alternative.
+2. **Open-PDK allowlist** — the `…/<pdk>/libs.tech/xschem` segment of the *resolved* path must match
+   `sky130*`, `gf180mcu*`, `ihp-sg13g2`, or `sg13g2`. Gating on the resolved path (not on
+   `set ::env(PDK)`) means an rc cannot claim an open PDK name and then resolve somewhere else.
+   Any other PDK — a proprietary foundry kit — is refused even when the directory exists.
+3. **Fully-resolved and existing** — an unset variable is a refusal, never a partial path. Without
+   this, an unset `PDK_ROOT` would collapse the expression to `/ihp-sg13g2/libs.tech/xschem`, an
+   absolute path at the filesystem root. The directory must also actually exist.
+
+Only the PDK's `libs.tech/xschem` directory is added — never `$PDK_ROOT` itself.
+
+## Building from source
+
+`./build-from-source.sh` rebuilds `dist/assets/` from the real TypeScript sources rather than
+hand-editing the minified bundle. The viewer's WebAssembly is checked into the upstream repo, so
+this needs only Node and a Vite build — no emscripten toolchain.
+
+It clones [`TinyTapeout/xschem-viewer`](https://github.com/TinyTapeout/xschem-viewer) at a pinned
+commit, applies [`patches/xschem-viewer/*.patch`](patches/xschem-viewer/), installs a vite config
+that emits un-hashed asset names, and builds:
+
+- `0001-configurable-library-search-roots.patch` — the resolver, as readable TypeScript. This is
+  also the patch offered upstream (see [docs/UPSTREAMING.md](docs/UPSTREAMING.md)).
+- `0002-bundled-local-libraries.patch` — repoints the library map at the bundled, per-PDK
+  namespaced `xschem_lib/<pdk>/` directories.
+
+It **stages only** by default and reports a per-file diff against the committed bundle; `--install`
+is required to overwrite `dist/assets`. A rebuild reproduces `wacl.wasm` and `index.css`
+byte-identically, and the resulting `index.js` passes the same resolver suite as the shipped bundle.
+
 ## Implementation
 
-Two built files are patched (the upstream TypeScript source is not vendored):
+Two built files carry the fork's changes (`dist/assets/index.js` is reproducible from source via
+the pipeline above; `dist/extension.cjs` is still maintained as built output):
 
 - **`dist/assets/index.js`** — the Tiny Tapeout viewer bundle. The `fetchContent` resolver in
   its library manager is rewritten per the order above and reads `window.XSCHEM_EXTRA_LIBRARY_ROOTS`
@@ -68,14 +115,31 @@ bundled libraries and fixtures:
   GitHub CSP block simulated: bundled sky130/IHP/devices resolve, configured-root and
   schematic-relative refs resolve, an absolute ref under a configured root resolves, and unknown /
   out-of-root absolute refs are refused.
-- **`test/config.test.cjs`** — `xExpand`/`xLibDirs`/`xParseAppends`: variable expansion,
-  named-folder token, `xschemrc`-append parsing, out-of-workspace gating, non-existent-path skipping.
+- **`test/config.test.cjs`** — `xExpand`/`xLibDirs`/`xParseAppends`/`xParsePdkSource`: variable
+  expansion, named-folder token, `xschemrc`-append parsing, out-of-workspace gating,
+  non-existent-path skipping, and the PDK-source gates (open PDK followed; proprietary PDK refused
+  *while its directory exists*, proving the allowlist rather than absence is doing the work; unset
+  variable refused; opt-in respected).
 - **`test/manifest.test.cjs`** — manifest settings/defaults, both bundles parse, the patches are
-  intact, the IHP remap is complete, and bundled IHP symbols retain their Apache-2.0 headers.
+  intact, the IHP remap is complete, bundled IHP symbols retain their Apache-2.0 headers, the
+  open-PDK allowlist contains no foundry name, and every test fixture has a parseable xschem
+  version header.
 
-Not covered: a headless webview render test (the WASM viewer itself is not exercised in CI). The
-earlier manual end-to-end check (bio-afe SRMC drawings) resolved **19/19** symbols vs **8/19** on
-the upstream resolver.
+The resolver test extracts the method by **regex**, not a literal signature, so it validates the
+committed bundle and a `build-from-source.sh` rebuild equally (the minifier renames identifiers on
+every build).
+
+### Render verification
+
+`npm test` covers resolution logic; it does not prove the WASM viewer paints. `npm run test:smoke`
+(`test/smoke/render-smoke.mjs`, plus the `Render smoke` CI workflow) drives the real viewer in
+headless Chromium against a schematic referencing bundled IHP/SKY130/stock symbols and asserts no
+uncaught errors, that every referenced symbol resolved, and that the canvas contains drawn pixels.
+It needs Playwright, so it is kept **out of `npm test`** — that suite stays dependency-free — and
+runs in its own workflow.
+
+The earlier manual end-to-end check (bio-afe SRMC drawings) resolved **19/19** symbols vs **8/19**
+on the upstream resolver.
 
 ## Changelog
 

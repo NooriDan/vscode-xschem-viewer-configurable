@@ -1,0 +1,42 @@
+name: Render smoke
+
+# Drives the real WASM viewer in headless Chromium and asserts a schematic actually renders —
+# the gap the dependency-free `npm test` suite cannot cover.
+#
+# Kept in its own workflow (not a job in ci.yml) for two reasons: it needs a browser download, and
+# it is the newest/least-proven check here — a flake in it must not block the resolver test matrix.
+# Promote it to a required check once it has a track record.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Headless render
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # --no-save: playwright stays out of package.json so `npm test` remains dependency-free.
+      - name: Install Playwright + Chromium
+        run: |
+          npm i --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Render smoke test
+        run: npm run test:smoke
+
+      - name: Upload render screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-smoke-screenshot
+          path: test/smoke/render-smoke.png
+          if-no-files-found: warn

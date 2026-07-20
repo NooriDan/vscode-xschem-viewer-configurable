@@ -1,0 +1,55 @@
+--- a/src/model/libraries.ts
++++ b/src/model/libraries.ts
+@@ -1,40 +1,16 @@
+ import { LibraryLoader } from './LibraryLoader';
+ 
++// Bundled by the extension under dist/xschem_lib/, with each PDK namespaced in its own subdir so
++// PDK library namespaces never share a directory. Upstream points these at raw.githubusercontent.com,
++// which a VS Code webview's Content-Security-Policy blocks.
+ export const libraryLoader = new LibraryLoader([
+-  {
+-    path: 'devices/',
+-    url: 'https://raw.githubusercontent.com/StefanSchippers/xschem/master/xschem_library/',
+-  },
+-  {
+-    path: 'stdcells/',
+-    url: 'https://raw.githubusercontent.com/StefanSchippers/xschem_sky130/main/',
+-  },
+-  {
+-    path: 'sky130_tests/',
+-    url: 'https://raw.githubusercontent.com/StefanSchippers/xschem_sky130/main/',
+-  },
+-  {
+-    path: 'sky130_fd_pr/',
+-    url: 'https://raw.githubusercontent.com/StefanSchippers/xschem_sky130/main/',
+-  },
+-  {
+-    path: 'sky130_stdcells/',
+-    url: 'https://raw.githubusercontent.com/StefanSchippers/xschem_sky130/main/',
+-  },
+-  {
+-    path: 'mips_cpu/',
+-    url: 'https://raw.githubusercontent.com/StefanSchippers/xschem_sky130/main/',
+-  },
+-  {
+-    path: 'sg13g2_pr',
+-    url: 'https://raw.githubusercontent.com/IHP-GmbH/IHP-Open-PDK/main/ihp-sg13g2/libs.tech/xschem/',
+-  },
+-  {
+-    path: 'sg13g2_stdcells',
+-    url: 'https://raw.githubusercontent.com/IHP-GmbH/IHP-Open-PDK/main/ihp-sg13g2/libs.tech/xschem/',
+-  },
+-  {
+-    path: 'sg13g2_test',
+-    url: 'https://raw.githubusercontent.com/IHP-GmbH/IHP-Open-PDK/main/ihp-sg13g2/libs.tech/xschem/',
+-  },
++  { path: 'devices/', url: 'xschem_lib/' },
++  { path: 'stdcells/', url: 'xschem_lib/' },
++  { path: 'sky130_tests/', url: 'xschem_lib/sky130/' },
++  { path: 'sky130_fd_pr/', url: 'xschem_lib/sky130/' },
++  { path: 'sky130_stdcells/', url: 'xschem_lib/sky130/' },
++  { path: 'mips_cpu/', url: 'xschem_lib/' },
++  { path: 'sg13g2_pr', url: 'xschem_lib/ihp-sg13g2/' },
++  { path: 'sg13g2_stdcells', url: 'xschem_lib/ihp-sg13g2/' },
++  { path: 'sg13g2_test', url: 'xschem_lib/ihp-sg13g2/' },
+ ]);

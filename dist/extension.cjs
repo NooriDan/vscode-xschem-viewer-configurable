@@ -77,6 +77,75 @@ function xParseAppends(rcPath, rcDir, wsRoot) {
 	}
 	return out;
 }
+// Open-source PDKs whose OUT-OF-TREE xschem library dir we're willing to auto-add when
+// `xschem.followXschemrcPdkSource` is on. A repo's xschemrc commonly does:
+//   set ::env(PDK) ihp-sg13g2
+//   source $env(PDK_ROOT)/$env(PDK)/libs.tech/xschem/xschemrc
+// pulling in the PDK's library tree that lives outside the workspace. We follow that ONLY for PDKs
+// on this allowlist (open silicon) — never a proprietary/foundry PDK name.
+const xOpenPdk = [/^sky130[a-z0-9]*$/i, /^gf180mcu[a-z0-9]*$/i, /^ihp[-_]?sg13g2$/i, /^sg13g2$/i];
+function xIsOpenPdk(name) {
+	return typeof name === "string" && xOpenPdk.some((re) => re.test(name.trim()));
+}
+// Expand Tcl-style $env(VAR) / ${VAR} / $VAR against the process environment. `pdkName` (parsed from
+// the rc's `set ::env(PDK) …`) overrides $env(PDK)/$PDK so an rc that sets it inline is honored even
+// when the host process didn't export PDK. Returns null if ANY referenced variable is unset/empty:
+// an unset PDK_ROOT would otherwise collapse `$env(PDK_ROOT)/$env(PDK)/libs.tech/xschem` down to a
+// bogus absolute path rooted at "/", so a partial expansion must never be treated as a real path.
+function xTclEnv(str, pdkName) {
+	let missing = false;
+	const val = (v) => {
+		const r = v === "PDK" && pdkName ? pdkName : (process.env[v] || "");
+		if (!r) missing = true;
+		return r;
+	};
+	const out = String(str)
+		.replace(/\$\{?env\(([A-Za-z_][A-Za-z0-9_]*)\)\}?/g, (_, v) => val(v))
+		.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, v) => val(v))
+		.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, v) => val(v));
+	return missing ? null : out;
+}
+// Parse an xschemrc that `source`s an OPEN PDK's xschemrc, returning that PDK's `libs.tech/xschem`
+// directory (absolute) so its libraries resolve. Opt-in and allowlisted: this deliberately reaches
+// OUTSIDE the workspace, so it is gated on the resolved path's PDK segment (…/<pdk>/libs.tech/xschem)
+// being an open PDK. An unresolved variable, a proprietary PDK name, or a missing PDK_ROOT yields
+// nothing. Existence is enforced later by xLibDirs' isDir() check.
+function xParsePdkSource(rcPath, dbg) {
+	const out = [];
+	let text;
+	try { text = FS.readFileSync(rcPath, "utf8"); } catch (e) { return out; }
+	// PDK name for $env(PDK) expansion: `set ::env(PDK) X` / `set env(PDK) X` / `set PDK X`, else env.
+	let pdk = null;
+	const pm = text.match(/^[ \t]*set[ \t]+(?:::)?(?:env\(PDK\)|PDK)[ \t]+(.+?)[ \t]*$/m);
+	if (pm) pdk = pm[1].replace(/^["'{]+|["'}]+$/g, "").trim();
+	if (!pdk) pdk = process.env.PDK || null;
+	const marker = "libs.tech/xschem";
+	const re = /^[ \t]*source[ \t]+(.+?)[ \t]*$/gm;
+	let m;
+	while ((m = re.exec(text))) {
+		let raw = m[1].replace(/^["']+|["']+$/g, "").trim();
+		if (raw.indexOf(marker) < 0) continue;                 // only follow rc's that source a PDK xschem tree
+		const expanded = xTclEnv(raw, pdk);
+		if (expanded == null) {                                // an unset/empty variable -> refuse
+			if (dbg) console.warn("[xschem-viewer] xschemrc PDK source has an unset variable, skipping: " + raw);
+			continue;
+		}
+		if (expanded.indexOf("$") >= 0) continue;              // leftover literal $ -> refuse (never trust a partial path)
+		const at = expanded.indexOf(marker);
+		const dir = P.normalize(expanded.slice(0, at + marker.length));
+		if (!P.isAbsolute(dir)) continue;                      // out-of-tree roots must be absolute
+		// Gate on the resolved path itself: the segment naming the PDK (…/<pdk>/libs.tech/xschem) must
+		// be an open-source PDK. This — not `set PDK` — is what actually widens the webview's read scope,
+		// so a proprietary PDK path is refused even if `set PDK` claimed something open.
+		const pdkSeg = P.basename(P.dirname(P.dirname(dir)));
+		if (!xIsOpenPdk(pdkSeg)) {
+			if (dbg) console.warn("[xschem-viewer] xschemrc PDK source not on the open-PDK allowlist, skipping: " + dir + " (pdk=" + pdkSeg + ")");
+			continue;
+		}
+		if (!out.includes(dir)) out.push(dir);
+	}
+	return out;
+}
 // Absolute directories that should become library search roots for a given schematic.
 function xLibDirs(schematicUri) {
 	const cfg = xcfg();
@@ -105,15 +174,25 @@ function xLibDirs(schematicUri) {
 		if (!P.isAbsolute(pth)) pth = wsFolder ? P.join(wsFolder, pth) : P.resolve(pth);
 		push(pth, true);
 	}
-	if (cfg.get("autoDetectXschemrc") !== false) {
+	// The xschemrc walk feeds two independent features: in-workspace `append` parsing (on by default)
+	// and out-of-tree open-PDK `source` following (opt-in). Walk if either is enabled.
+	const autoRc = cfg.get("autoDetectXschemrc") !== false;
+	const followPdk = cfg.get("followXschemrcPdkSource") === true;
+	if (autoRc || followPdk) {
 		try {
 			let dir = P.dirname(schematicUri.fsPath);
 			const stop = wsFolder ? P.normalize(wsFolder) : null;
 			for (let depth = 0; depth < 64; depth++) {
 				try {
-					if (FS.existsSync(P.join(dir, "xschemrc"))) {
-						push(dir, false);
-						for (const extra of xParseAppends(P.join(dir, "xschemrc"), dir, stop)) push(extra, false);
+					const rc = P.join(dir, "xschemrc");
+					if (FS.existsSync(rc)) {
+						if (autoRc) {
+							push(dir, false);
+							for (const extra of xParseAppends(rc, dir, stop)) push(extra, false);
+						}
+						// Out-of-tree, so never workspace-gated: safety comes from the opt-in, the
+						// open-PDK allowlist inside xParsePdkSource, and push()'s existence check.
+						if (followPdk) for (const pdkDir of xParsePdkSource(rc, dbg)) push(pdkDir, false);
 					}
 				} catch (e) { }
 				const parent = P.dirname(dir);

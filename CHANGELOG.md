@@ -3,6 +3,38 @@
 All notable changes to **Xschem Viewer (Configurable)** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.0]
+
+### Added
+- **`xschem.followXschemrcPdkSource`** (default `false`) — opt-in following of an `xschemrc`'s
+  `source $env(PDK_ROOT)/$env(PDK)/libs.tech/xschem/xschemrc` line, so an **open** PDK's symbols
+  resolve without a manual `xschem.libraryPaths` entry. Gated three ways: opt-in, an open-PDK
+  allowlist checked against the *resolved* path segment (`sky130*`, `gf180mcu*`, `ihp-sg13g2`,
+  `sg13g2`) so a proprietary kit is refused even when present, and a full-expansion requirement so
+  an unset `PDK_ROOT` is a refusal rather than a path rooted at `/`. Independent of
+  `xschem.autoDetectXschemrc`, which still only ever adds in-workspace directories.
+- **`./build-from-source.sh`** — rebuilds `dist/assets/` from the upstream TypeScript sources
+  (pinned commit + `patches/xschem-viewer/*.patch`) instead of hand-patching the minified bundle.
+  Stages and diffs by default; `--install` is required to overwrite the shipped assets. A rebuild
+  reproduces `wacl.wasm` and `index.css` byte-identically and passes the full resolver suite.
+- **`npm run test:smoke`** + a `Render smoke` CI workflow — drives the real WASM viewer in headless
+  Chromium and asserts symbols resolve and the canvas is actually drawn. Kept out of `npm test`,
+  which stays dependency-free.
+- **`scripts/fetch-ihp-testlibs.sh`** (`npm run fetch:ihp-tests`) — fetches IHP's `sg13g2_tests`
+  galleries on demand. Git-ignored and excluded from the VSIX, so the default install stays lean;
+  the shipped library map already routes `sg13g2_test*` at them.
+- **`docs/UPSTREAMING.md`** — ready-to-submit resolver patch and PR text. Nothing has been pushed;
+  opening the PRs remains a human decision.
+
+### Fixed
+- Test fixtures `proj/altlib/widget.sym` and `proj/quotedlib/widget.sym` were missing the required
+  `file_version=` field and failed to parse when opened in the viewer. A new dependency-free
+  manifest check now asserts every fixture has a well-formed xschem version header.
+- The resolver test extracted `fetchContent` by literal signature (`async fetchContent(i){`), which
+  silently stops matching after any rebuild renames the parameter. It now matches by regex and
+  resolves minified helper identifiers through a scope proxy, so it validates the committed bundle
+  and a from-source rebuild alike.
+
 ## [1.3.0]
 
 First independent open-source release under the `NooriDan.xschem-viewer-configurable` identity

@@ -19,9 +19,10 @@ function ok(name, cond) { console.log((cond ? "  OK  " : "FAIL  ") + name); cond
 // --- package.json manifest ---
 const props = pkg.contributes.configuration.properties;
 ok("main points at dist/extension.cjs", pkg.main === "./dist/extension.cjs");
-ok("declares all four settings", ["xschem.libraryPaths", "xschem.autoDetectXschemrc", "xschem.includeWorkspaceFolders", "xschem.resolveDebug"].every((k) => props[k]));
+ok("declares all five settings", ["xschem.libraryPaths", "xschem.autoDetectXschemrc", "xschem.followXschemrcPdkSource", "xschem.includeWorkspaceFolders", "xschem.resolveDebug"].every((k) => props[k]));
 ok("libraryPaths default []", Array.isArray(props["xschem.libraryPaths"].default) && props["xschem.libraryPaths"].default.length === 0);
 ok("autoDetectXschemrc default true", props["xschem.autoDetectXschemrc"].default === true);
+ok("followXschemrcPdkSource default false (out-of-tree, must be opt-in)", props["xschem.followXschemrcPdkSource"].default === false);
 ok("includeWorkspaceFolders default false", props["xschem.includeWorkspaceFolders"].default === false);
 ok("resolveDebug default false", props["xschem.resolveDebug"].default === false);
 const ce = pkg.contributes.customEditors[0];
@@ -49,6 +50,13 @@ ok("resolver reads configured roots", idx.includes("XSCHEM_EXTRA_LIBRARY_ROOTS")
 ok("resolver supports absolute refs (root map)", idx.includes("XSCHEM_ROOT_MAP"));
 ok("host injects all three globals", ["XSCHEM_EXTRA_LIBRARY_ROOTS", "XSCHEM_ROOT_MAP", "XSCHEM_RESOLVE_DEBUG"].every((g) => ext.includes("window." + g)));
 ok("host parses xschemrc appends", ext.includes("xParseAppends"));
+ok("host follows open-PDK xschemrc source lines", ext.includes("xParsePdkSource"));
+// The allowlist is the trust boundary for the out-of-tree PDK feature: assert it exists and that
+// no proprietary/foundry vendor name has crept into it.
+ok("host declares an open-PDK allowlist", ext.includes("xOpenPdk") && ext.includes("xIsOpenPdk"));
+const allow = ext.slice(ext.indexOf("const xOpenPdk"), ext.indexOf("function xIsOpenPdk"));
+ok("allowlist covers the open PDKs", ["sky130", "gf180mcu", "sg13g2"].every((p) => allow.includes(p)));
+ok("allowlist contains no proprietary foundry name", !/tsmc|globalfoundries|gf22|samsung|umc|smic/i.test(allow));
 
 // --- IHP default support ---
 ok("no CSP-blocked IHP GitHub URL remains", !idx.includes("raw.githubusercontent.com/IHP-GmbH"));
@@ -69,6 +77,28 @@ ok("sky130 map url points at the PDK subdir", idx.includes('path:"sky130_fd_pr/"
 for (const d of ["devices", "sky130/sky130_fd_pr"]) {
 	ok("bundled lib dir " + d, fs.existsSync(path.join(DIST, "xschem_lib", d)) && fs.readdirSync(path.join(DIST, "xschem_lib", d)).some((f) => f.endsWith(".sym")));
 }
+
+// --- fixtures are valid xschem ---
+// Every .sch/.sym in the test tree must carry a well-formed version header. The real parser
+// requires BOTH `version=` and `file_version=`; omitting the latter fails with a confusing
+// `Expected "file_version="` SyntaxError only when the file is opened in the viewer, which no
+// other test would catch (fixtures are otherwise used only as path-existence targets).
+function walkFixtures(dir, out = []) {
+	if (!fs.existsSync(dir)) return out;
+	for (const e of fs.readdirSync(dir)) {
+		const p = path.join(dir, e);
+		if (fs.statSync(p).isDirectory()) walkFixtures(p, out);
+		else if (p.endsWith(".sch") || p.endsWith(".sym")) out.push(p);
+	}
+	return out;
+}
+const fixtures = walkFixtures(path.join(REPO, "test"));
+ok("found fixture schematics/symbols", fixtures.length > 0);
+const badHeader = fixtures.filter((f) => {
+	const first = fs.readFileSync(f, "utf8").split("\n")[0];
+	return !/^v \{xschem version=[0-9.]+ file_version=[0-9.]+\}/.test(first);
+});
+ok("every fixture has a parseable xschem version header" + (badHeader.length ? " -> " + badHeader.map((f) => path.relative(REPO, f)).join(", ") : ""), badHeader.length === 0);
 
 console.log("\n=== manifest: " + pass + " passed, " + fail + " failed ===");
 assert.strictEqual(fail, 0);

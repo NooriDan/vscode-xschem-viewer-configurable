@@ -11,10 +11,14 @@ const FIX = path.join(__dirname, "fixtures");
 const LIBDIR = path.join(FIX, "libdir");       // a configured search root
 const SCHEMDIR = path.join(FIX, "schemdir");   // the opened schematic's directory (baseURL)
 
-// --- extract `async fetchContent(i){ ... }` from the shipped bundle by brace matching ---
-function extractMethod(src, sig) {
-	const start = src.indexOf(sig);
-	if (start < 0) throw new Error("signature not found: " + sig);
+// --- extract `async fetchContent(<param>){ ... }` from the bundle by brace matching ---
+// Matched by REGEX, not a literal signature: the minifier picks a different parameter name on every
+// rebuild (the hand-patched bundle uses `i`, a from-source build via build-from-source.sh emits `o`),
+// so a hardcoded "async fetchContent(i){" would silently stop matching after a legitimate rebuild.
+function extractMethod(src, re) {
+	const m = re.exec(src);
+	if (!m) throw new Error("signature not found: " + re);
+	const start = m.index;
 	let depth = 0, i = src.indexOf("{", start);
 	for (let j = i; j < src.length; j++) {
 		const c = src[j];
@@ -24,7 +28,7 @@ function extractMethod(src, sig) {
 	throw new Error("unbalanced braces");
 }
 const idx = fs.readFileSync(path.join(DIST, "assets", "index.js"), "utf8");
-const fetchContent = extractMethod(idx, "async fetchContent(i){");
+const fetchContent = extractMethod(idx, /async fetchContent\([A-Za-z_$]*\)\s*\{/);
 
 // --- globals the resolver reads ---
 const LIB_URI = "https://wv.test/lib0";        // fake webview URI for LIBDIR
@@ -49,20 +53,38 @@ global.fetch = async function (u) {
 };
 
 function makeLib() {
-	const Ao = eval(`(function(){
-		class Ao {
-			constructor(){ this.libraries=LIBS; this.cache=new Map(); this.pathToUrl=new Map(); this.baseURL=null; }
-			async load(i){ const r=this.cache.get(i); if(r!=null)return r; const l=await this.fetchContent(i); if(!l.ok) throw new Error("File not found: "+i); const s=await l.text(); return this.cache.set(i,s), s; }
-			${fetchContent}
+	// Every free identifier in the extracted method is a minified module-scope helper whose name
+	// changes on each rebuild. Only two shapes exist, and one stub covers both:
+	//   githubURLToRaw(url) -> called WITH an argument; identity for the non-github URLs used here
+	//   hostGlobals()       -> called with NO argument; returns the object holding the XSCHEM_* globals
+	// A `with`-scope Proxy resolves real globals normally and everything else to that stub, so the
+	// test never has to know the minifier's chosen names.
+	const helper = (...a) => (a.length ? String(a[0]) : global.window);
+	const scope = new Proxy(Object.create(null), {
+		has: () => true,
+		get: (_t, k) => {
+			if (k === Symbol.unscopables) return undefined;
+			if (k === "LIBS") return LIBS;
+			if (k in global) return global[k];
+			return helper;
+		},
+	});
+	const Ao = new Function("scope", `
+		with (scope) {
+			return class Ao {
+				constructor(){ this.libraries=LIBS; this.cache=new Map(); this.pathToUrl=new Map(); this.baseURL=null; }
+				async load(i){ const r=this.cache.get(i); if(r!=null)return r; const l=await this.fetchContent(i); if(!l.ok) throw new Error("File not found: "+i); const s=await l.text(); return this.cache.set(i,s), s; }
+				${fetchContent}
+			};
 		}
-		return Ao;
-	})()`);
+	`)(scope);
 	const o = new Ao();
 	o.baseURL = SCHEM_BASE + "top.sch";
 	return o;
 }
-// Use the REAL bundled library map extracted from the shipped index.js (no drift).
-const mapMatch = idx.match(/new ao\((\[[^\]]*\])\)/);
+// Use the REAL bundled library map extracted from index.js (no drift). The constructor's minified
+// class name changes per build, so match on the map's shape rather than a specific identifier.
+const mapMatch = idx.match(/new [A-Za-z_$][A-Za-z0-9_$]*\((\[\{path:[^\]]*\])\)/);
 if (!mapMatch) throw new Error("library map not found in index.js");
 const LIBS = eval(mapMatch[1]);
 
@@ -80,6 +102,12 @@ const cases = [
 	["nonexistent/nope.sym", false, "unknown symbol fails"],
 	["/etc/shadow", false, "absolute ref outside any root is refused"],
 ];
+
+// The IHP test galleries are fetched on demand (scripts/fetch-ihp-testlibs.sh), git-ignored, and
+// absent from a clean checkout — so exercise their routing only when they're actually installed.
+const haveTestlibs = fs.existsSync(path.join(DIST, "xschem_lib", "ihp-sg13g2", "sg13g2_tests", "ac_mim_cap.sym"));
+if (haveTestlibs) cases.push(["sg13g2_tests/ac_mim_cap.sym", true, "on-demand IHP test gallery"]);
+else console.log("  SKIP  on-demand IHP test gallery (run scripts/fetch-ihp-testlibs.sh to cover)");
 
 (async () => {
 	let pass = 0, fail = 0;

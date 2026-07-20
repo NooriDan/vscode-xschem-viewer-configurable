@@ -17,7 +17,14 @@ rsync -a \
   --exclude='.vsixbuild' \
   --exclude='packaging' \
   --exclude='test' \
+  --exclude='scripts' \
+  --exclude='docs' \
+  --exclude='patches' \
+  --exclude='.fromsource' \
   --exclude='build-vsix.sh' \
+  --exclude='build-from-source.sh' \
+  --exclude='dist/xschem_lib/ihp-sg13g2/sg13g2_tests' \
+  --exclude='dist/xschem_lib/ihp-sg13g2/sg13g2_tests_xyce' \
   --exclude='.gitignore' \
   --exclude='FEATURE.md' \
   --exclude='TODO.md' \
