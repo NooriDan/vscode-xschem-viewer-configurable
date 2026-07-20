@@ -61,18 +61,10 @@ function makeLib() {
 	o.baseURL = SCHEM_BASE + "top.sch";
 	return o;
 }
-// Exact bundled library map (post-IHP-remap): sg13g2_* now point at the bundle.
-const LIBS = [
-	{ path: "devices/", url: "xschem_lib/" },
-	{ path: "stdcells/", url: "xschem_lib/" },
-	{ path: "sky130_tests/", url: "xschem_lib/" },
-	{ path: "sky130_fd_pr/", url: "xschem_lib/" },
-	{ path: "sky130_stdcells/", url: "xschem_lib/" },
-	{ path: "mips_cpu/", url: "xschem_lib/" },
-	{ path: "sg13g2_pr", url: "xschem_lib/" },
-	{ path: "sg13g2_stdcells", url: "xschem_lib/" },
-	{ path: "sg13g2_test", url: "xschem_lib/" },
-];
+// Use the REAL bundled library map extracted from the shipped index.js (no drift).
+const mapMatch = idx.match(/new ao\((\[[^\]]*\])\)/);
+if (!mapMatch) throw new Error("library map not found in index.js");
+const LIBS = eval(mapMatch[1]);
 
 const cases = [
 	// [ref, shouldResolve, label]

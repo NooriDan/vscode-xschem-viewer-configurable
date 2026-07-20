@@ -44,15 +44,21 @@ ok("host parses xschemrc appends", ext.includes("xParseAppends"));
 
 // --- IHP default support ---
 ok("no CSP-blocked IHP GitHub URL remains", !idx.includes("raw.githubusercontent.com/IHP-GmbH"));
-ok("library map routes sg13g2_pr to the bundle", idx.includes('path:"sg13g2_pr",url:"xschem_lib/"'));
-for (const f of ["sg13g2_pr/sg13_lv_nmos.sym", "sg13g2_pr/sg13_lv_pmos.sym", "sg13g2_pr/cap_cmim.sym", "sg13g2_stdcells/IHP130_stdcells.sym"]) {
+ok("library map routes sg13g2_pr to its PDK subdir", idx.includes('path:"sg13g2_pr",url:"xschem_lib/ihp-sg13g2/"'));
+for (const f of ["ihp-sg13g2/sg13g2_pr/sg13_lv_nmos.sym", "ihp-sg13g2/sg13g2_pr/sg13_lv_pmos.sym", "ihp-sg13g2/sg13g2_pr/cap_cmim.sym", "ihp-sg13g2/sg13g2_stdcells/IHP130_stdcells.sym"]) {
 	ok("bundled IHP symbol " + f, fs.existsSync(path.join(DIST, "xschem_lib", f)));
 }
 // IHP symbols carry their Apache-2.0 header (attribution retained)
-ok("bundled IHP symbol retains Apache-2.0 header", fs.readFileSync(path.join(DIST, "xschem_lib/sg13g2_pr/sg13_lv_nmos.sym"), "utf8").includes("Apache License"));
+ok("bundled IHP symbol retains Apache-2.0 header", fs.readFileSync(path.join(DIST, "xschem_lib/ihp-sg13g2/sg13g2_pr/sg13_lv_nmos.sym"), "utf8").includes("Apache License"));
+
+// --- PDK namespacing: each PDK under its own subdir, never flat at xschem_lib/ root ---
+const xl = path.join(DIST, "xschem_lib");
+ok("sky130 lives under xschem_lib/sky130/ (not flat)", fs.existsSync(path.join(xl, "sky130/sky130_fd_pr")) && !fs.existsSync(path.join(xl, "sky130_fd_pr")));
+ok("IHP lives under xschem_lib/ihp-sg13g2/ (not flat)", fs.existsSync(path.join(xl, "ihp-sg13g2/sg13g2_pr")) && !fs.existsSync(path.join(xl, "sg13g2_pr")));
+ok("sky130 map url points at the PDK subdir", idx.includes('path:"sky130_fd_pr/",url:"xschem_lib/sky130/"'));
 
 // --- other bundled libs still present ---
-for (const d of ["devices", "sky130_fd_pr"]) {
+for (const d of ["devices", "sky130/sky130_fd_pr"]) {
 	ok("bundled lib dir " + d, fs.existsSync(path.join(DIST, "xschem_lib", d)) && fs.readdirSync(path.join(DIST, "xschem_lib", d)).some((f) => f.endsWith(".sym")));
 }
 

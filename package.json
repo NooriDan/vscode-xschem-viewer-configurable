@@ -1,6 +1,6 @@
 {
 	"name": "vscode-xschem-viewer",
-	"version": "1.2.1",
+	"version": "1.2.2",
 	"displayName": "Xschem Viewer (Configurable)",
 	"description": "Explore and visualize XSchem schematics in vscode, using xschem-viewer by Tiny Tapeout. Configurable-library-path fork: resolves PDK devices (incl. bundled IHP sg13g2) and sub-block symbols from XSCHEM_LIBRARY_PATH-style search roots.",
 	"icon": "xschem_logo.png",

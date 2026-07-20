@@ -17,16 +17,18 @@ license terms for each file are in that file's own header; this file is a summar
 
 ## Bundled symbol libraries (`dist/xschem_lib/`)
 
-These XSchem symbol libraries are redistributed so schematics render without external files:
+These XSchem symbol libraries are redistributed so schematics render without external files. Each
+PDK is kept in its own `xschem_lib/<pdk>/` subdirectory to avoid namespace mixing; generic/stock
+libraries stay at the top level:
 
-- **`devices/`** — xschem's stock device symbols (Stefan Schippers), as included by the upstream
-  extension. See the file headers for terms.
-- **`sky130_fd_pr/`, `sky130_stdcells/`, `sky130_tests/`** — SkyWater SKY130 XSchem symbols, as
-  included by the upstream extension (Apache-2.0; see file headers).
-- **`sg13g2_pr/`, `sg13g2_stdcells/`** — IHP SG13G2 XSchem symbols, **added by this fork** from
-  the IHP Open PDK — <https://github.com/IHP-GmbH/IHP-Open-PDK>. © 2024 IHP PDK Authors, licensed
-  under **Apache-2.0**. Only the `.sym`/`.sch` symbol-graphics files are bundled; no device models
-  or foundry-confidential material is included.
+- **`devices/`, `stdcells/`, `mips_cpu/`** — xschem's stock device symbols and generic/example
+  libraries (Stefan Schippers), as included by the upstream extension. See the file headers for terms.
+- **`sky130/`** (`sky130_fd_pr/`, `sky130_stdcells/`, `sky130_tests/`) — SkyWater SKY130 XSchem
+  symbols, as included by the upstream extension (Apache-2.0; see file headers).
+- **`ihp-sg13g2/`** (`sg13g2_pr/`, `sg13g2_stdcells/`) — IHP SG13G2 XSchem symbols, **added by this
+  fork** from the IHP Open PDK — <https://github.com/IHP-GmbH/IHP-Open-PDK>. © 2024 IHP PDK Authors,
+  licensed under **Apache-2.0**. Only the `.sym`/`.sch` symbol-graphics files are bundled; no device
+  models or foundry-confidential material is included.
 
 No proprietary or NDA-restricted PDK material is bundled. Non-open PDKs remain opt-in via the
 `xschem.libraryPaths` setting and are never redistributed here.

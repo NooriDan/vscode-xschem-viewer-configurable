@@ -46,7 +46,11 @@ Two built files are patched (the upstream TypeScript source is not vendored):
   its library manager is rewritten per the order above and reads `window.XSCHEM_EXTRA_LIBRARY_ROOTS`
   (search roots) and `window.XSCHEM_ROOT_MAP` (`{fs, uri}` pairs, for absolute refs) at fetch time.
   The bundled library map's `sg13g2_*` entries are repointed from the GitHub URL to `xschem_lib/`.
-- **`dist/xschem_lib/sg13g2_pr/`, `sg13g2_stdcells/`** — the IHP SG13G2 symbol libraries, bundled.
+- **`dist/xschem_lib/`** — bundled symbol libraries; each PDK is namespaced under its own
+  `xschem_lib/<pdk>/` subdir (`sky130/`, `ihp-sg13g2/`) so PDK libraries never share a directory,
+  with the library map's `url` pointing at the subdir. Generic/stock libs (`devices/`, `stdcells/`,
+  `mips_cpu/`) stay at the top level. The IHP SG13G2 libraries (`ihp-sg13g2/sg13g2_pr`,
+  `ihp-sg13g2/sg13g2_stdcells`) are added by this fork.
 - **`dist/extension.cjs`** — the VS Code extension host. It reads the settings, expands variables,
   computes the search roots (config + auto-detected/parsed `xschemrc`), adds those directories
   (and optionally the schematic's own workspace folder) to the webview `localResourceRoots`, and
@@ -75,6 +79,10 @@ the upstream resolver.
 
 ## Changelog
 
+- **1.2.2** — organize bundled PDK libraries into per-PDK subdirectories
+  (`xschem_lib/sky130/`, `xschem_lib/ihp-sg13g2/`) so PDK namespaces never share a directory; the
+  library map's `url` points at each subdir (schematic references like `sg13g2_pr/…` are unchanged).
+  The resolver test now extracts the real map from the bundle so it can't drift.
 - **1.2.1** — harden the `xschemrc`-append gate (found by adversarial review): when no workspace
   folder is open the gate falls back to the rc's own directory instead of vanishing; the
   containment check now resolves symlinks (an in-tree symlink can't smuggle in an out-of-tree PDK);
