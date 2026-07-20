@@ -1,6 +1,6 @@
 {
 	"name": "vscode-xschem-viewer",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"displayName": "Xschem Viewer (Configurable)",
 	"description": "Explore and visualize XSchem schematics in vscode, using xschem-viewer by Tiny Tapeout. Configurable-library-path fork: resolves PDK devices (incl. bundled IHP sg13g2) and sub-block symbols from XSCHEM_LIBRARY_PATH-style search roots.",
 	"icon": "xschem_logo.png",
@@ -39,7 +39,7 @@
 				"xschem.autoDetectXschemrc": {
 					"type": "boolean",
 					"default": true,
-					"markdownDescription": "Walk up from the opened schematic's folder to the workspace root and add every directory that contains an `xschemrc` file as a library search root. This mirrors xschem's near-universal `append XSCHEM_LIBRARY_PATH [file dirname [info script]]` idiom, so in-repo `shared/…` and sibling-block symbols resolve with no manual configuration. (PDK symbols outside the repo still need an explicit `#xschem.libraryPaths` entry.)"
+					"markdownDescription": "Walk up from the opened schematic's folder to the workspace root and add every directory that contains an `xschemrc` file as a library search root, **and** parse that file's `append XSCHEM_LIBRARY_PATH` lines (resolving the `[file dirname [info script]]` idiom). So in-repo `shared/…` and sibling-block symbols resolve with no manual configuration. Parsed roots are only added if they exist and lie inside the workspace; lines using `$env(...)` or `source` are skipped — PDK symbols outside the repo stay opt-in via an explicit `#xschem.libraryPaths#` entry."
 				},
 				"xschem.includeWorkspaceFolders": {
 					"type": "boolean",

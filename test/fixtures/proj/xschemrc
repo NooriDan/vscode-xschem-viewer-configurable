@@ -5,3 +5,5 @@ append XSCHEM_LIBRARY_PATH :[file dirname [info script]]
 append XSCHEM_LIBRARY_PATH :[file normalize [file dirname [info script]]/libs/extra]
 append XSCHEM_LIBRARY_PATH :[file normalize [file dirname [info script]]/../beyond]
 append XSCHEM_LIBRARY_PATH $env(SOME_PDK)/libs.tech/xschem
+append XSCHEM_LIBRARY_PATH :[file dirname [file normalize [info script]]]/altlib
+append XSCHEM_LIBRARY_PATH "[file dirname [info script]]/quotedlib"

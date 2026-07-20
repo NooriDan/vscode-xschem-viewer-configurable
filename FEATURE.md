@@ -75,6 +75,11 @@ the upstream resolver.
 
 ## Changelog
 
+- **1.2.1** — harden the `xschemrc`-append gate (found by adversarial review): when no workspace
+  folder is open the gate falls back to the rc's own directory instead of vanishing; the
+  containment check now resolves symlinks (an in-tree symlink can't smuggle in an out-of-tree PDK);
+  and the parser accepts the `[file dirname [file normalize [info script]]]` and quoted-append
+  idioms. Added tests for each.
 - **1.2.0** — bundle IHP SG13G2 symbols and route `sg13g2_*` to the bundle (render offline, no
   config); absolute-symbol-reference support via a root map; `autoDetectXschemrc` now parses
   in-workspace `append XSCHEM_LIBRARY_PATH` lines; committed test suite + CI; `THIRD_PARTY_NOTICES`.

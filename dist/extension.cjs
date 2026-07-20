@@ -42,9 +42,11 @@ function xExpand(str, wsFolder) {
 // explicit `xschem.libraryPaths` — this keeps out-of-tree PDKs opt-in.
 function xRelFromInfoScript(expr) {
 	if (expr.indexOf("[info script]") < 0) return null;
-	if (!/\[file\s+dirname\s+\[info script\]\]/.test(expr)) return null; // a library path is a directory
+	// Accept [info script] nested under any [file dirname ...] wrapper (incl. [file normalize ...]),
+	// but reject non-dirname uses like `source [info script]`. A library path is a directory.
+	if (!/\[file\s+dirname\b[^\]]*\[info script\]/.test(expr)) return null;
 	let after = expr.slice(expr.indexOf("[info script]") + "[info script]".length);
-	after = after.replace(/^\]+/, "").replace(/\]+\s*$/, "").trim(); // drop [file dirname ..]/[file normalize ..] closers
+	after = after.replace(/^\]+/, "").replace(/\]+\s*$/, "").replace(/["'}]+\s*$/, "").trim(); // drop closers + trailing quotes/braces
 	if (after.startsWith("/") || after.startsWith("\\")) after = after.slice(1);
 	return after === "" ? "." : after;
 }
@@ -61,7 +63,15 @@ function xParseAppends(rcPath, rcDir, wsRoot) {
 		const rel = xRelFromInfoScript(expr);
 		if (rel == null) continue;
 		const resolved = P.normalize(P.join(rcDir, rel));
-		if (wsRoot && !(resolved === wsRoot || resolved.startsWith(wsRoot + P.sep))) continue;
+		// Gate to the workspace root, or the rc's own directory when no folder is open (a null gate
+		// must never mean "no gate"). Resolve symlinks on both sides so an in-tree symlink cannot
+		// smuggle in an out-of-tree PDK directory. Non-existent paths fall back to the lexical form
+		// and are dropped later by the isDir() check in xLibDirs.
+		const gate = wsRoot || rcDir;
+		let real, gateReal;
+		try { real = FS.realpathSync(resolved); } catch (e) { real = resolved; }
+		try { gateReal = FS.realpathSync(gate); } catch (e) { gateReal = P.normalize(gate); }
+		if (!(real === gateReal || real.startsWith(gateReal + P.sep))) continue;
 		out.push(resolved);
 	}
 	return out;

@@ -10,7 +10,9 @@ const FIX = path.join(__dirname, "fixtures");
 const PROJ = path.join(FIX, "proj");
 const SCHEM = path.join(PROJ, "blocks", "top.sch");
 const EXTRA = path.join(PROJ, "libs", "extra");
-const BEYOND = path.join(FIX, "beyond");           // ../beyond from proj: exists but OUTSIDE the workspace
+const ALT = path.join(PROJ, "altlib");             // [file dirname [file normalize [info script]]]/altlib
+const QUOTED = path.join(PROJ, "quotedlib");       // "[file dirname [info script]]/quotedlib"
+const BEYOND = path.join(FIX, "beyond");           // ../beyond from proj: OUTSIDE the workspace (must be gated)
 
 // Extract the helper block between the fork markers and eval with injected deps.
 const src = fs.readFileSync(path.join(REPO, "dist", "extension.cjs"), "utf8");
@@ -20,14 +22,15 @@ assert.ok(a >= 0 && b > a, "helper markers present");
 const block = src.slice(a, b);
 
 const folders = [{ name: "proj", uri: { fsPath: PROJ } }];
+let WF = folders;          // mutable so tests can exercise the no-workspace-open case
 let cfgStore = {};
 const s = {
 	workspace: {
-		workspaceFolders: folders,
+		get workspaceFolders() { return WF; },
 		getConfiguration: () => ({ get: (k) => cfgStore[k] }),
 		getWorkspaceFolder: (uri) => {
 			const p = uri.fsPath; let best = null;
-			for (const wf of folders) { const f = wf.uri.fsPath; if (p === f || p.startsWith(f + path.sep)) { if (!best || f.length > best.uri.fsPath.length) best = wf; } }
+			for (const wf of (WF || [])) { const f = wf.uri.fsPath; if (p === f || p.startsWith(f + path.sep)) { if (!best || f.length > best.uri.fsPath.length) best = wf; } }
 			return best;
 		},
 	},
@@ -55,6 +58,8 @@ ok("xParseAppends includes rc dir", has(appends, PROJ));
 ok("xParseAppends includes normalized in-repo append (libs/extra)", has(appends, EXTRA));
 ok("xParseAppends gates out-of-workspace append (../beyond)", !has(appends, BEYOND));
 ok("xParseAppends skips $env(...) / source lines", appends.every((d) => !d.includes("SOME_PDK") && !d.includes("PDK_ROOT")));
+ok("xParseAppends resolves [file dirname [file normalize [info script]]]/rel", has(appends, ALT));
+ok("xParseAppends resolves quoted append", has(appends, QUOTED));
 
 // 5) xLibDirs: autodetect xschemrc + parse appends (no explicit libraryPaths)
 cfgStore = { libraryPaths: [], autoDetectXschemrc: true };
@@ -72,6 +77,15 @@ ok("xLibDirs skips nonexistent libraryPath", !dirs.some((d) => d.includes("does"
 // 7) xLibDirs: empty config -> empty
 cfgStore = { libraryPaths: [], autoDetectXschemrc: false };
 ok("xLibDirs empty when nothing configured", xLibDirs(uri).length === 0);
+
+// 8) No workspace open (wsRoot/stop null): the gate must fall back to the rc's own dir, never vanish.
+WF = [];
+cfgStore = { libraryPaths: [], autoDetectXschemrc: true };
+const noWs = xLibDirs(uri);
+ok("no-workspace: still autodetects rc dir", has(noWs, PROJ));
+ok("no-workspace: still adds in-tree append (libs/extra)", has(noWs, EXTRA));
+ok("no-workspace: STILL gates out-of-tree append (../beyond)", !has(noWs, BEYOND));
+WF = folders;
 
 console.log("\n=== config: " + pass + " passed, " + fail + " failed ===");
 assert.strictEqual(fail, 0);
