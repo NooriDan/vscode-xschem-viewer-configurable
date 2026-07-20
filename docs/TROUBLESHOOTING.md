@@ -185,6 +185,11 @@ Not a resolution problem if you see no `[xschem-viewer]` lines whatsoever.
 2. Confirm the file parses as xschem. A `.sch`/`.sym` must begin with a full version header —
    `v {xschem version=3.4.6 file_version=1.2}`. Missing `file_version=` fails with
    `SyntaxError: Expected "file_version=" … but "}" found`.
+   - A `SyntaxError` naming an unexpected `"` instead is the **property tokenization** bug: a value
+     containing bare inner quotes (typically an ngspice comment inside a `code_shown` block, e.g.
+     `… defined by "let" …`) aborted the whole file. Fixed in **1.4.0** — upgrade and reload.
+   - An unescaped `}` inside a quoted value genuinely ends the record, in this viewer and in real
+     xschem alike. Escape it as `\}` if the file is hand-written.
 3. Verify the install is intact: `npm test` in a clone checks bundle integrity, and
    `npm run test:smoke` renders a known-good schematic headlessly.
 

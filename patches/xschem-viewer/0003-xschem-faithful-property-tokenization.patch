@@ -1,0 +1,94 @@
+--- a/src/parser/xschem-parser.peg
++++ b/src/parser/xschem-parser.peg
+@@ -75,7 +75,7 @@ NotEscape
+   = [^\\{}]+ { return text(); }
+ 
+ Properties
+-  = "{" _ pairs:(Pair (_ Pair)*)? _ "}" {
++  = "{" __ pairs:(Pair (__ Pair)*)? __ "}" {
+       return Object.fromEntries(pairs ? [pairs[0]].concat(pairs[1].map(p => p[1])) : []) as Record<string, string>;
+     }
+ 
+@@ -91,21 +91,60 @@ PropertyName
+   = [^ \r\n\t;\\=}]+ { return text(); }
+ 
+ PropertyValue
+-  = str:QuotedString { return str.replace(/\\./g, m => m[1]);}
+-  / LiteralString
+-  
+-LiteralString 
+-  = chars:(Escape / [^ \r\n\t{}])+ { return chars.join(""); }
+-
+-QuotedString 
+-  = "\"" string:((StringEscape / StringCharacters)*) "\"" { return string.join(""); }
++  = chunks:ValueChunk+ { return chunks.join(""); }
++
++// xschem does NOT model a value as "one quoted span OR one bare token". In
++// token.c:438 get_tok_value() an unescaped `"` merely TOGGLES a quote flag, and the
++// value ends at the first SPACE() char (token.c:24 -> \n ' ' \t \0 ;) reached while
++// !quote && !escape. A value is therefore an unbroken concatenation of alternating
++// quoted and bare runs -- which is why a comment containing "let" mid-value parses
++// fine in xschem but failed (or silently truncated) here.
++ValueChunk
++  = QuotedRun
++  / BareRun
++
++// The second alternative accepts an unterminated run rather than failing the whole
++// file. Real xschem returns an empty value at odd final parity; this is a deliberate
++// leniency, since a hard SyntaxError blanks the entire schematic.
++QuotedRun
++  = Quote chars:QuotedChar* Quote { return chars.join(""); }
++  / Quote chars:QuotedChar*       { return chars.join(""); }
++
++BareRun
++  = chars:BareChar+ { return chars.join(""); }
++
++QuotedChar
++  = EscapedChar
++  / BackslashRun
++  / [^\\"}]
++
++BareChar
++  = EscapedChar
++  / BackslashRun
++  / [^\\"} \t\r\n;{]
++
++// The two load passes fold non-linearly. save.c:3260 load_ascii_string() unescapes
++// \X -> X and ends the record at the first unescaped `}`; get_tok_value() then
++// re-escapes on that RESULT. So for n file backslashes before char X: memory holds
++// m = n>>1, pass 2 emits m>>1, and X is literal iff m is odd -- except `}`, which is
++// pass-1 business and is literal iff n is odd. A naive \\ -> \ rule corrupts the
++// 6-backslash runs in verilog_preprocessor.sym; hence the arithmetic.
++EscapedChar
++  = bs:$"\\"+ c:. &{
++      var k = c.charCodeAt(0);
++      if (k === 125) return (bs.length & 1) === 1;
++      if ((bs.length >> 1) & 1) return true;
++      return k !== 34 && k !== 32 && k !== 9 && k !== 10 && k !== 13 && k !== 59;
++    } {
++      return "\\".repeat((bs.length >> 1) >> 1) + c;
++    }
+ 
+-StringCharacters
+-  = [^\\"]+ { return text(); }
++BackslashRun
++  = bs:$"\\"+ { return "\\".repeat((bs.length >> 1) >> 1); }
+ 
+-StringEscape
+-  = "\\\\\"" { return '\\"'; }
+-  / "\\" value:. { return value; }
++// A file-level \" collapses to a bare " in memory, and therefore toggles parity too.
++Quote
++  = "\\\"" / "\""
+ 
+ Line
+   = "L" _ layer:Integer _ x1:Coordinate _ y1:Coordinate _ x2:Coordinate _ y2:Coordinate _ props:Properties {
+@@ -230,3 +269,8 @@ Integer
+ 
+ _
+   = [ \t\n\r]*
++
++// SPACE() counts ';' as a separator too; scoped to Properties so that widening it
++// cannot loosen coordinate parsing.
++__
++  = [ \t\n\r;]*

@@ -40,6 +40,12 @@ const EXPECTED_SYMBOLS = [
 	"sg13g2_pr/sg13_lv_nmos.sym",
 	"sg13g2_pr/sg13_lv_pmos.sym",
 	"sky130_fd_pr/nfet_01v8.sym",
+	// Carries the property value with bare inner quotes (patch 0003), exercising the fix through
+	// the real shipped bundle. This is a BELT, not the guard: at the pinned UPSTREAM_REF the
+	// unpatched grammar TRUNCATES that value rather than throwing, and every assertion below is
+	// value-blind, so a regression can still render 8/8 symbols and pass. test/parser.test.cjs is
+	// what actually fails -- and it runs in the required matrix, unlike this workflow.
+	"devices/code_shown.sym",
 ];
 
 const MIME = {
@@ -149,8 +155,8 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, ign
 page.on("pageerror", (e) => pageErrors.push(String(e)));
 page.on("console", (m) => consoleLines.push(m.text()));
 
-// Minimum geometry for a render to count as real rather than blank/partial. The fixture draws seven
-// symbols plus a title block, so a genuine render is far above this.
+// Minimum geometry for a render to count as real rather than blank/partial. The fixture draws eight
+// symbols (a title block among them), so a genuine render is far above this.
 const MIN_SHAPES = 10;
 
 let renderInfo = null;
