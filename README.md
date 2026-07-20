@@ -24,12 +24,22 @@ This fork adds real search-path configuration (an `XSCHEM_LIBRARY_PATH`-style li
 in-repo `xschemrc` roots, and only widens the webview's file access to the directories you
 actually point it at.
 
+## Bundled PDKs (render with zero config)
+
+- **SkyWater SKY130** — `sky130_fd_pr/*`, `sky130_stdcells/*` (from upstream).
+- **IHP SG13G2** — `sg13g2_pr/*`, `sg13g2_stdcells/*` (added by this fork). Previously these only
+  loaded from GitHub, which the webview CSP blocks; they are now bundled and resolve offline.
+- xschem stock `devices/*`.
+
+Other PDKs and private libraries are opt-in via `xschem.libraryPaths` (see below). See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled-content attribution.
+
 ## Install
 
 **From the prebuilt VSIX** (in this repo):
 
 ```bash
-code --install-extension xschem-viewer-configurable-1.1.1.vsix --force
+code --install-extension xschem-viewer-configurable-1.2.0.vsix --force
 ```
 
 Then run **Developer: Reload Window** (Command Palette). Reloading is required after any
@@ -76,6 +86,23 @@ Requires `node` and `zip`:
 ```
 
 This regenerates `xschem-viewer-configurable-<version>.vsix` from the tree.
+
+## Tests
+
+Node-only, no dependencies. They extract the shipped resolver and config helpers and drive them
+against the bundled libraries and fixtures (see [FEATURE.md](FEATURE.md#verification)):
+
+```bash
+npm test
+```
+
+- `test/resolver.test.cjs` — symbol resolution (bundled sky130/IHP/devices, configured roots,
+  schematic-relative, absolute refs, and refusals).
+- `test/config.test.cjs` — variable expansion, library-dir resolution, `xschemrc`-append parsing.
+- `test/manifest.test.cjs` — manifest, bundle integrity, and that the patches are intact.
+
+CI runs the suite on Node 18/20/22 and builds the VSIX on every push/PR
+(`.github/workflows/ci.yml`).
 
 ## Attribution & license
 

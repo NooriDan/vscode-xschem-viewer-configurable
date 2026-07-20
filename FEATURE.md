@@ -7,6 +7,8 @@ works. Planned work and bugs live in [TODO.md](TODO.md).
 
 Configurable library search paths for the in-editor XSchem viewer, so symbols outside the
 schematic's own folder (PDK devices, shared block libraries, sibling blocks) resolve and render.
+The **SkyWater SKY130** and **IHP SG13G2** device libraries are bundled and render with no
+configuration.
 
 ## Symbol resolution order
 
@@ -14,12 +16,15 @@ When the viewer needs a referenced symbol/schematic `P` (e.g. `sg13g2_pr/sg13_lv
 tries, in order, and uses the first that returns a file:
 
 1. **`https://…`** — direct fetch (unchanged from upstream).
-2. **Bundled library prefixes** — the extension's built-in map (`devices/`, `sky130_*`, …).
-   *Changed:* on a miss/blocked fetch it now **falls through** instead of aborting.
-3. **Configured search roots** — each root in `xschem.libraryPaths` (plus auto-detected
+2. **Absolute refs** (`P` starts with `/`) — if `P` falls under a configured library root, it is
+   mapped to that root's webview URI. Absolute refs outside every configured root are refused. *(new)*
+3. **Bundled library prefixes** — the extension's built-in map (`devices/`, `sky130_*`, `sg13g2_*`,
+   …). *Changed:* on a miss/blocked fetch it now **falls through** instead of aborting; the
+   `sg13g2_*` (IHP) entries now point at the bundled library instead of a CSP-blocked GitHub URL.
+4. **Configured search roots** — each root in `xschem.libraryPaths` (plus auto-detected
    `xschemrc` directories) is tried as `<root>/P`. *(new)*
-4. **Schematic-relative** — resolved against the opened schematic's directory (upstream fallback).
-5. **Bare-name fallback** — a name with no `/` is retried as `devices/<name>`.
+5. **Schematic-relative** — resolved against the opened schematic's directory (upstream fallback).
+6. **Bare-name fallback** — a name with no `/` is retried as `devices/<name>`.
 
 Every fetch is guarded, so a CSP-blocked or missing candidate becomes a miss and falls through
 rather than throwing.
@@ -29,7 +34,7 @@ rather than throwing.
 | Setting | Default | Behavior |
 |---|---|---|
 | `xschem.libraryPaths` | `[]` | Ordered `XSCHEM_LIBRARY_PATH`-style roots. Variables: `${env:VAR}`, `~`, `${workspaceFolder:NAME}` (named multi-root folder), bare `${workspaceFolder}` (schematic's own/innermost folder). Relative entries resolve against the schematic's workspace folder. Entries that aren't existing directories are skipped (logged under `resolveDebug`). |
-| `xschem.autoDetectXschemrc` | `true` | Walks up from the schematic's directory to the workspace root and adds every directory containing an `xschemrc` file (mirrors xschem's `append XSCHEM_LIBRARY_PATH [file dirname [info script]]`). |
+| `xschem.autoDetectXschemrc` | `true` | Walks up from the schematic's directory to the workspace root and adds every directory containing an `xschemrc` file. It also parses that file's `append XSCHEM_LIBRARY_PATH` lines, resolving the `[file dirname [info script]]` idiom to the rc's directory. Lines using `$env(...)` or `source` (i.e. a foundry/PDK `xschemrc` that may point out of tree) are skipped, and parsed roots are only added if they exist and lie inside the workspace — so out-of-tree PDKs stay opt-in via `xschem.libraryPaths`. |
 | `xschem.includeWorkspaceFolders` | `false` | When enabled, adds only the schematic's own workspace folder to the webview's allowed roots (relative `../` sub-block refs). Off by default to keep the read scope minimal. |
 | `xschem.resolveDebug` | `false` | Logs each resolution attempt and skipped path to the webview console. |
 
@@ -38,27 +43,41 @@ rather than throwing.
 Two built files are patched (the upstream TypeScript source is not vendored):
 
 - **`dist/assets/index.js`** — the Tiny Tapeout viewer bundle. The `fetchContent` resolver in
-  its library manager is rewritten per the order above and reads
-  `window.XSCHEM_EXTRA_LIBRARY_ROOTS` at fetch time.
-- **`dist/extension.cjs`** — the VS Code extension host. It reads the settings, expands
-  variables, computes the search roots (config + auto-detected `xschemrc`), adds those
-  directories (and optionally the schematic's own workspace folder) to the webview
-  `localResourceRoots`, and injects the roots + debug flag into the webview HTML via a
+  its library manager is rewritten per the order above and reads `window.XSCHEM_EXTRA_LIBRARY_ROOTS`
+  (search roots) and `window.XSCHEM_ROOT_MAP` (`{fs, uri}` pairs, for absolute refs) at fetch time.
+  The bundled library map's `sg13g2_*` entries are repointed from the GitHub URL to `xschem_lib/`.
+- **`dist/xschem_lib/sg13g2_pr/`, `sg13g2_stdcells/`** — the IHP SG13G2 symbol libraries, bundled.
+- **`dist/extension.cjs`** — the VS Code extension host. It reads the settings, expands variables,
+  computes the search roots (config + auto-detected/parsed `xschemrc`), adds those directories
+  (and optionally the schematic's own workspace folder) to the webview `localResourceRoots`, and
+  injects the roots, the absolute-ref root map, and the debug flag into the webview HTML via a
   nonce'd inline script.
-- **`package.json`** — declares the four settings; version bumped to `1.1.x`.
+- **`package.json`** — declares the four settings; version bumped to `1.2.x`.
 
 ## Verification
 
-- **Resolver:** driven end-to-end against a real IHP/analog schematic set (the bio-afe SRMC
-  drawings) with `fetch` mapped to the real filesystem and the GitHub CSP block simulated.
-  Result: **19/19** referenced symbols resolve, vs **8/19** with the upstream resolver
-  (upstream fails exactly the `sg13g2_pr/*`, `shared/*`, and sibling-block refs).
-- **Config helpers:** `xExpand`/`xLibDirs` unit-tested (variable expansion, named-folder token,
-  non-existent-path skipping, defaults). All green.
-- Not covered: a headless webview render test (the WASM viewer is not exercised in CI).
+A committed, dependency-free test suite (`npm test`) runs on Node 18/20/22 in CI and also builds
+the VSIX. It extracts the **shipped** resolver and config helpers and drives them against the
+bundled libraries and fixtures:
+
+- **`test/resolver.test.cjs`** — the real `fetchContent`, `fetch` mapped to the filesystem and the
+  GitHub CSP block simulated: bundled sky130/IHP/devices resolve, configured-root and
+  schematic-relative refs resolve, an absolute ref under a configured root resolves, and unknown /
+  out-of-root absolute refs are refused.
+- **`test/config.test.cjs`** — `xExpand`/`xLibDirs`/`xParseAppends`: variable expansion,
+  named-folder token, `xschemrc`-append parsing, out-of-workspace gating, non-existent-path skipping.
+- **`test/manifest.test.cjs`** — manifest settings/defaults, both bundles parse, the patches are
+  intact, the IHP remap is complete, and bundled IHP symbols retain their Apache-2.0 headers.
+
+Not covered: a headless webview render test (the WASM viewer itself is not exercised in CI). The
+earlier manual end-to-end check (bio-afe SRMC drawings) resolved **19/19** symbols vs **8/19** on
+the upstream resolver.
 
 ## Changelog
 
+- **1.2.0** — bundle IHP SG13G2 symbols and route `sg13g2_*` to the bundle (render offline, no
+  config); absolute-symbol-reference support via a root map; `autoDetectXschemrc` now parses
+  in-workspace `append XSCHEM_LIBRARY_PATH` lines; committed test suite + CI; `THIRD_PARTY_NOTICES`.
 - **1.1.1** — `${workspaceFolder:NAME}` support; non-existent library paths skipped instead of
   silently added; `includeWorkspaceFolders` default → `false` and scoped to the schematic's own
   folder; corrected docs/example for `${workspaceFolder}` multi-root semantics.

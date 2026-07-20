@@ -13,8 +13,10 @@ mkdir -p "$BUILD/extension"
 # Assemble the extension payload: runtime files only (not repo/packaging/docs meta).
 rsync -a \
   --exclude='.git' \
+  --exclude='.github' \
   --exclude='.vsixbuild' \
   --exclude='packaging' \
+  --exclude='test' \
   --exclude='build-vsix.sh' \
   --exclude='.gitignore' \
   --exclude='FEATURE.md' \

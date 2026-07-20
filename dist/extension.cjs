@@ -35,6 +35,37 @@ function xExpand(str, wsFolder) {
 	if (out === "~" || out.startsWith("~/") || out.startsWith("~\\")) out = O.homedir() + out.slice(1);
 	return out;
 }
+// Parse `append XSCHEM_LIBRARY_PATH <expr>` lines from an xschemrc, resolving the common
+// `[file dirname [info script]]` idiom to the rc's own directory (with any trailing relative
+// path). Only existing, in-workspace directories are returned; lines using $env(...) or `source`
+// (i.e. a foundry/PDK xschemrc that may point out of tree) are intentionally skipped and left to
+// explicit `xschem.libraryPaths` — this keeps out-of-tree PDKs opt-in.
+function xRelFromInfoScript(expr) {
+	if (expr.indexOf("[info script]") < 0) return null;
+	if (!/\[file\s+dirname\s+\[info script\]\]/.test(expr)) return null; // a library path is a directory
+	let after = expr.slice(expr.indexOf("[info script]") + "[info script]".length);
+	after = after.replace(/^\]+/, "").replace(/\]+\s*$/, "").trim(); // drop [file dirname ..]/[file normalize ..] closers
+	if (after.startsWith("/") || after.startsWith("\\")) after = after.slice(1);
+	return after === "" ? "." : after;
+}
+function xParseAppends(rcPath, rcDir, wsRoot) {
+	const out = [];
+	let text;
+	try { text = FS.readFileSync(rcPath, "utf8"); } catch (e) { return out; }
+	const re = /^[ \t]*append[ \t]+XSCHEM_LIBRARY_PATH[ \t]+(.+?)[ \t]*$/gm;
+	let m;
+	while ((m = re.exec(text))) {
+		let expr = m[1].trim();
+		if (/\$env\(|\bsource\b/.test(expr)) continue;
+		expr = expr.replace(/^:/, "");
+		const rel = xRelFromInfoScript(expr);
+		if (rel == null) continue;
+		const resolved = P.normalize(P.join(rcDir, rel));
+		if (wsRoot && !(resolved === wsRoot || resolved.startsWith(wsRoot + P.sep))) continue;
+		out.push(resolved);
+	}
+	return out;
+}
 // Absolute directories that should become library search roots for a given schematic.
 function xLibDirs(schematicUri) {
 	const cfg = xcfg();
@@ -62,7 +93,12 @@ function xLibDirs(schematicUri) {
 			let dir = P.dirname(schematicUri.fsPath);
 			const stop = wsFolder ? P.normalize(wsFolder) : null;
 			for (let depth = 0; depth < 64; depth++) {
-				try { if (FS.existsSync(P.join(dir, "xschemrc"))) push(dir, false); } catch (e) { }
+				try {
+					if (FS.existsSync(P.join(dir, "xschemrc"))) {
+						push(dir, false);
+						for (const extra of xParseAppends(P.join(dir, "xschemrc"), dir, stop)) push(extra, false);
+					}
+				} catch (e) { }
 				const parent = P.dirname(dir);
 				if (!parent || parent === dir) break;
 				if (stop && P.normalize(dir) === stop) break;
@@ -113,6 +149,9 @@ const o = class o {
 			n = U();
 		const libDirs = xLibDirs(e.uri);
 		const rootUris = libDirs.map((d) => t.asWebviewUri(s.Uri.file(d)).toString());
+		// {fs, uri} pairs let the resolver map an absolute symbol ref (C {/abs/foo.sym}) that falls
+		// under a configured library root to the corresponding webview URI.
+		const rootMap = libDirs.map((d) => ({ fs: d, uri: t.asWebviewUri(s.Uri.file(d)).toString() }));
 		const dbg = xcfg().get("resolveDebug") === true;
 		return `
 			<!DOCTYPE html>
@@ -126,6 +165,7 @@ const o = class o {
 				<base href="${t.asWebviewUri(s.Uri.joinPath(this.context.extensionUri, "dist"))}/">
 				<script nonce="${n}">
 				window.XSCHEM_EXTRA_LIBRARY_ROOTS = ${JSON.stringify(rootUris)};
+				window.XSCHEM_ROOT_MAP = ${JSON.stringify(rootMap)};
 				window.XSCHEM_RESOLVE_DEBUG = ${dbg ? "true" : "false"};
 				const targetUrl = new URL(window.location.href);
     			targetUrl.searchParams.set('file', "${t.asWebviewUri(e.uri)}");
