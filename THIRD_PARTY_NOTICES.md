@@ -30,5 +30,14 @@ libraries stay at the top level:
   licensed under **Apache-2.0**. Only the `.sym`/`.sch` symbol-graphics files are bundled; no device
   models or foundry-confidential material is included.
 
+### Fetched on demand (not redistributed)
+
+`scripts/fetch-ihp-testlibs.sh` can download IHP's `sg13g2_tests` example galleries into
+`dist/xschem_lib/ihp-sg13g2/` for local use. Those files are **not** part of this repository or the
+published VSIX — they are git-ignored and excluded from the packaged extension. They come from the
+IHP Open PDK (© IHP PDK Authors, Apache-2.0) and only `.sym`/`.sch` symbol graphics are copied.
+
 No proprietary or NDA-restricted PDK material is bundled. Non-open PDKs remain opt-in via the
-`xschem.libraryPaths` setting and are never redistributed here.
+`xschem.libraryPaths` setting and are never redistributed here. The opt-in
+`xschem.followXschemrcPdkSource` setting only ever *reads* an already-installed open PDK from disk
+and refuses non-open PDK paths; it redistributes nothing.

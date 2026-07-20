@@ -1,0 +1,160 @@
+--- a/src/model/LibraryLoader.ts
++++ b/src/model/LibraryLoader.ts
+@@ -9,6 +9,26 @@
+   url: string;
+ }
+ 
++/**
++ * Search roots injected by a host (e.g. the VS Code extension) that knows where the user's
++ * libraries live. Read at fetch time so the host can set them before the viewer boots.
++ *
++ *  - `XSCHEM_EXTRA_LIBRARY_ROOTS`: base URLs tried as `<root>/<path>`, like XSCHEM_LIBRARY_PATH.
++ *  - `XSCHEM_ROOT_MAP`: `{fs, uri}` pairs mapping a filesystem prefix to a fetchable base URL,
++ *    used to honor absolute symbol references (`C {/abs/foo.sym}`) that fall under a known root.
++ *  - `XSCHEM_RESOLVE_DEBUG`: log every resolution attempt.
++ */
++interface IXschemHostGlobals {
++  XSCHEM_EXTRA_LIBRARY_ROOTS?: string[];
++  XSCHEM_ROOT_MAP?: Array<{ fs: string; uri: string }>;
++  XSCHEM_RESOLVE_DEBUG?: boolean;
++}
++
++function hostGlobals(): IXschemHostGlobals {
++  // `window` in the webview; `globalThis` keeps this usable from a non-DOM test harness.
++  return (typeof window !== 'undefined' ? window : globalThis) as unknown as IXschemHostGlobals;
++}
++
+ export class LibraryLoader {
+   private readonly cache = new Map<string, string>();
+   readonly pathToUrl = new Map<string, string>();
+@@ -41,39 +61,122 @@
+   }
+ 
+   private async fetchContent(path: string): Promise<Response> {
++    // A blocked (CSP) or failed fetch must degrade to a miss we can fall through from, never a
++    // throw that aborts the whole resolution chain.
++    const tryFetch = async (url: string | URL): Promise<Response | null> => {
++      try {
++        return await fetch(url);
++      } catch {
++        return null;
++      }
++    };
++
+     if (path.toLowerCase().startsWith('https://')) {
+-      const url = githubURLToRaw(path);
+-      return await fetch(url);
++      return await fetch(githubURLToRaw(path));
++    }
++
++    const { XSCHEM_EXTRA_LIBRARY_ROOTS, XSCHEM_ROOT_MAP, XSCHEM_RESOLVE_DEBUG } = hostGlobals();
++    const extraRoots = XSCHEM_EXTRA_LIBRARY_ROOTS ?? [];
++    const rootMap = XSCHEM_ROOT_MAP ?? [];
++    const debug = XSCHEM_RESOLVE_DEBUG ?? false;
++    const log = (msg: string) => {
++      if (debug) {
++        console.log(`[xschem-viewer] ${msg}`);
++      }
++    };
++    // Keep the last non-ok response so a miss reports the real HTTP status instead of a bare throw.
++    let lastResponse: Response | null = null;
++
++    // 1. Absolute reference — honored only when it falls under a root the host declared. An
++    //    absolute path outside every configured root is refused rather than fetched.
++    if (path.startsWith('/')) {
++      for (const root of rootMap) {
++        if (root?.fs == null) {
++          continue;
++        }
++        if (path !== root.fs && !path.startsWith(`${root.fs}/`)) {
++          continue;
++        }
++        const suffix = path.slice(root.fs.length).replace(/^\/+/, '');
++        const url = `${root.uri.replace(/\/+$/, '')}/${suffix}`;
++        const response = await tryFetch(url);
++        if (response?.ok) {
++          this.pathToUrl.set(path, url);
++          log(`'${path}' <- abs root ${url}`);
++          return response;
++        }
++        if (response != null) {
++          lastResponse = response;
++        }
++      }
+     }
++
++    // 2. Bundled/known library prefixes. Unlike upstream this falls THROUGH on a miss instead of
++    //    returning the failed response, so a prefix match no longer shadows the search roots below.
+     for (const library of this.libraries) {
+       if (path.startsWith(library.path)) {
+         const url = library.url + path;
+-        return await fetch(url);
++        const response = await tryFetch(url);
++        if (response?.ok) {
++          log(`'${path}' <- bundled ${url}`);
++          return response;
++        }
++        if (response != null) {
++          lastResponse = response;
++        }
++      }
++    }
++
++    // 3. Host-configured search roots, in order (XSCHEM_LIBRARY_PATH semantics).
++    for (const root of extraRoots) {
++      const url = `${String(root).replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
++      const response = await tryFetch(url);
++      if (response?.ok) {
++        this.pathToUrl.set(path, url);
++        log(`'${path}' <- libraryPath ${url}`);
++        return response;
++      }
++      if (response != null) {
++        lastResponse = response;
+       }
+     }
++
++    // 4. Relative to the opened schematic.
+     if (this.baseURL != null) {
+       const url = new URL(path, githubURLToRaw(this.baseURL));
+-      const result = await fetch(url);
+-      if (result.ok) {
++      const result = await tryFetch(url);
++      if (result?.ok) {
+         this.pathToUrl.set(path, url.toString());
+         return result;
+       }
++      if (result != null) {
++        lastResponse = result;
++      }
+ 
+       // Try to look under the root of the github repo
+       const altPath = url.pathname.split('/').slice(0, 4).join('/') + '/' + path;
+       if (url.hostname === 'raw.githubusercontent.com' && url.pathname !== altPath) {
+         url.pathname = altPath;
+-        const result = await fetch(url);
+-        if (result.ok) {
++        const result = await tryFetch(url);
++        if (result?.ok) {
+           this.pathToUrl.set(path, url.toString());
+           return result;
+         }
++        if (result != null) {
++          lastResponse = result;
++        }
+       }
+     }
++
++    // 5. As a fallback, look under devices/
+     if (!path.includes('/')) {
+-      // as a fallback, look under devices/
+       return await this.fetchContent(`devices/${path}`);
+     }
++
++    log(`NOT FOUND '${path}' — tried libraryPaths ${JSON.stringify(extraRoots)}`);
++    if (lastResponse != null) {
++      return lastResponse;
++    }
+     throw new Error(`File not found: ${path}`);
+   }
+ }

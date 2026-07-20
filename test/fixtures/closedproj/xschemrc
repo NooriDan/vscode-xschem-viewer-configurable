@@ -1,0 +1,3 @@
+# proprietary PDK: the dir EXISTS, so refusal must come from the open-PDK allowlist, not absence
+set ::env(PDK) tsmcN65
+source $env(PDK_ROOT)/$env(PDK)/libs.tech/xschem/xschemrc

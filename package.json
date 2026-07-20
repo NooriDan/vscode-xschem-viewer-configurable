@@ -1,8 +1,8 @@
 {
 	"name": "xschem-viewer-configurable",
-	"version": "1.3.0",
+	"version": "1.4.0",
 	"displayName": "Xschem Viewer (Configurable)",
-	"description": "View XSchem .sch/.sym schematics in VS Code with configurable library search paths. Bundles the SKY130 and IHP SG13G2 device symbols so PDK schematics render with zero config.",
+	"description": "View XSchem .sch/.sym schematics in VS Code with configurable library search paths. Bundles the SKY130 and IHP SG13G2 device symbols so PDK schematics render with zero config, and can follow an xschemrc into an installed open PDK.",
 	"icon": "xschem_logo.png",
 	"repository": {
 		"type": "git",
@@ -16,7 +16,9 @@
 	"type": "module",
 	"scripts": {
 		"test": "node test/resolver.test.cjs && node test/config.test.cjs && node test/manifest.test.cjs",
-		"package": "./build-vsix.sh"
+		"package": "./build-vsix.sh",
+		"fetch:ihp-tests": "./scripts/fetch-ihp-testlibs.sh",
+		"test:smoke": "node test/smoke/render-smoke.mjs"
 	},
 	"keywords": [
 		"xschem",
@@ -45,6 +47,11 @@
 					"type": "boolean",
 					"default": true,
 					"markdownDescription": "Walk up from the opened schematic's folder to the workspace root and add every directory that contains an `xschemrc` file as a library search root, **and** parse that file's `append XSCHEM_LIBRARY_PATH` lines (resolving the `[file dirname [info script]]` idiom). So in-repo `shared/…` and sibling-block symbols resolve with no manual configuration. Parsed roots are only added if they exist and lie inside the workspace; lines using `$env(...)` or `source` are skipped — PDK symbols outside the repo stay opt-in via an explicit `#xschem.libraryPaths#` entry."
+				},
+				"xschem.followXschemrcPdkSource": {
+					"type": "boolean",
+					"default": false,
+					"markdownDescription": "**Opt-in.** When an in-repo `xschemrc` `source`s an **open-source PDK's** xschemrc — e.g. `source $env(PDK_ROOT)/$env(PDK)/libs.tech/xschem/xschemrc` — add that PDK's `libs.tech/xschem` directory as a library search root, so PDK devices resolve without a manual `#xschem.libraryPaths#` entry.\n\nRequires `PDK_ROOT` to be set in the environment, and the PDK name to come either from an inline `set ::env(PDK) …` in the `xschemrc` or a `PDK` environment variable. Only **open** PDKs are followed: the resolved `…/<pdk>/libs.tech/xschem` path segment must match `sky130*`, `gf180mcu*`, `ihp-sg13g2`, or `sg13g2` — any other (proprietary/foundry) PDK is refused, as is a path with an unresolved variable.\n\nThis deliberately reaches **outside** the workspace, which is why it is off by default; leave it off and list the path in `#xschem.libraryPaths#` if you prefer to be explicit. Independent of `#xschem.autoDetectXschemrc#`, which only ever adds in-workspace directories."
 				},
 				"xschem.includeWorkspaceFolders": {
 					"type": "boolean",
