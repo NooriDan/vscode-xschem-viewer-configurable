@@ -134,9 +134,25 @@ every build).
 `npm test` covers resolution logic; it does not prove the WASM viewer paints. `npm run test:smoke`
 (`test/smoke/render-smoke.mjs`, plus the `Render smoke` CI workflow) drives the real viewer in
 headless Chromium against a schematic referencing bundled IHP/SKY130/stock symbols and asserts no
-uncaught errors, that every referenced symbol resolved, and that the canvas contains drawn pixels.
-It needs Playwright, so it is kept **out of `npm test`** — that suite stays dependency-free — and
-runs in its own workflow.
+uncaught page errors, that every referenced symbol resolved, and that the `<svg>` became visible
+with real geometry and a non-degenerate bounding box. It needs Playwright and `openssl`, so it is
+kept **out of `npm test`** — that suite stays dependency-free — and runs in its own workflow.
+
+Two things the harness must get right, both learned the hard way:
+
+- **It serves over HTTPS, not HTTP.** The resolver's first branch is
+  `path.startsWith('https://') -> fetch(path)`, which is how the *top-level* schematic loads — at
+  that moment `baseURL` is still unset, so no later fallback applies. In the webview the file is
+  always an `https:` vscode-resource URL. An HTTP harness therefore fails with a misleading
+  "File not found" against a code path that cannot occur in production. A self-signed cert is
+  generated per run and the browser launched with `ignoreHTTPSErrors`.
+- **It waits for the `<svg>` to become *visible*, not merely to exist.** The viewer renders to SVG
+  and holds it at `visibility: hidden` until the render completes, so visibility is the done signal.
+
+Current result: **7/7 symbols resolved, 97 SVG shapes, bbox 1180×291, 0 page errors.** The check is
+mutation-tested — hiding one bundled symbol makes it exit non-zero and name the missing symbol.
+(`tcleval failed:` console lines are expected noise: symbols carry ngspice `gm`/`id`/`vgs`
+annotations that only evaluate against a live simulation.)
 
 The earlier manual end-to-end check (bio-afe SRMC drawings) resolved **19/19** symbols vs **8/19**
 on the upstream resolver.

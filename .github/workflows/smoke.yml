@@ -3,9 +3,15 @@ name: Render smoke
 # Drives the real WASM viewer in headless Chromium and asserts a schematic actually renders —
 # the gap the dependency-free `npm test` suite cannot cover.
 #
-# Kept in its own workflow (not a job in ci.yml) for two reasons: it needs a browser download, and
-# it is the newest/least-proven check here — a flake in it must not block the resolver test matrix.
-# Promote it to a required check once it has a track record.
+# Verified locally: 7/7 symbols resolved (IHP nmos+pmos, SKY130 nfet, stock devices), 97 SVG shapes,
+# 0 page errors, and mutation-tested (hiding a bundled symbol makes it exit 1).
+#
+# Kept in its own workflow (not a job in ci.yml) because it needs a ~115 MB browser download, so an
+# infrastructure flake here must not block the resolver test matrix. Promote it to a required check
+# once it has a track record on GitHub-hosted runners.
+#
+# The harness needs `openssl` (present on ubuntu-latest) to mint a self-signed cert: it must serve
+# over HTTPS, since the resolver loads the top-level schematic via its `https://` branch.
 
 on:
   push:

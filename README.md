@@ -178,8 +178,13 @@ npm i --no-save playwright && npx playwright install --with-deps chromium
 npm run test:smoke
 ```
 
-It needs a browser, so it is kept out of `npm test` (which stays dependency-free) and runs in its
-own workflow (`.github/workflows/smoke.yml`).
+It renders `test/smoke/fixtures/smoke.sch` (IHP SG13G2 nmos+pmos, SKY130 nfet, stock devices) and
+asserts every symbol resolved and the SVG actually drew — currently 7/7 symbols, 97 shapes. A
+screenshot is written to `test/smoke/render-smoke.png`.
+
+Needs a Playwright browser and `openssl` (the harness serves over HTTPS, because the resolver loads
+the top-level schematic via its `https://` branch). Kept out of `npm test`, which stays
+dependency-free, and runs in its own workflow (`.github/workflows/smoke.yml`).
 
 ## Attribution & license
 

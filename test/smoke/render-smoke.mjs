@@ -8,14 +8,20 @@
 //   npm i --no-save playwright && npx playwright install --with-deps chromium
 //   npm run test:smoke                  # add --headed --keep-open to watch it
 //
-// It serves the repo over http and loads a page that reproduces what dist/extension.cjs injects into
-// the webview (base href, the three XSCHEM_* globals, the ?file= query param), then checks:
+// It serves the repo over https (see the TLS note below) and loads a page that reproduces what
+// dist/extension.cjs injects into the webview (base href, the three XSCHEM_* globals, the ?file=
+// query param), then checks:
 //   1. no uncaught page errors
 //   2. every referenced symbol resolved (via the resolveDebug log lines)
-//   3. the canvas contains actual non-uniform pixels (i.e. something was drawn)
-import http from "node:http";
+//   3. the <svg> became visible and holds real geometry with a non-degenerate bounding box
+//
+// The viewer renders to SVG (src/render/SVGRenderer.ts), not canvas, and keeps the <svg> at
+// visibility:hidden until the render completes — so "svg became visible" is the render-done signal.
+import https from "node:https";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -77,11 +83,37 @@ function harnessHtml(fileUrl) {
 </html>`;
 }
 
+// --- TLS ---------------------------------------------------------------------------------------
+// The harness must serve over HTTPS, not HTTP. The resolver's first branch is
+// `path.startsWith('https://') -> fetch(path)`, which is how the top-level schematic is loaded:
+// at that moment `baseURL` is still unset, so every later fallback is unavailable. In the webview
+// the file is always an https vscode-resource URL, so an http harness would exercise a code path
+// that cannot occur in production and fail with a misleading "File not found".
+// Self-signed, generated per run into a temp dir; the browser is launched with ignoreHTTPSErrors.
+function makeCert() {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xschem-smoke-"));
+	const key = path.join(dir, "key.pem");
+	const cert = path.join(dir, "cert.pem");
+	try {
+		execFileSync("openssl", [
+			"req", "-x509", "-newkey", "rsa:2048", "-nodes",
+			"-keyout", key, "-out", cert, "-days", "1",
+			"-subj", "/CN=127.0.0.1",
+			"-addext", "subjectAltName=IP:127.0.0.1",
+		], { stdio: "ignore" });
+	} catch (e) {
+		console.error("render-smoke: could not generate a self-signed cert (needs `openssl`): " + e.message);
+		process.exit(1);
+	}
+	return { key: fs.readFileSync(key), cert: fs.readFileSync(cert), dir };
+}
+const tls = makeCert();
+
 // --- static server -----------------------------------------------------------------------------
 // Set once the ephemeral port is known; the request handler closes over it and only ever runs after.
 let HARNESS_FILE_URL = "";
-const server = http.createServer((req, res) => {
-	const url = new URL(req.url, "http://127.0.0.1");
+const server = https.createServer({ key: tls.key, cert: tls.cert }, (req, res) => {
+	const url = new URL(req.url, "https://127.0.0.1");
 	const send = (code, body, type) => {
 		// COOP/COEP so a pthread-enabled emscripten build can use SharedArrayBuffer; CORP because
 		// require-corp otherwise blocks our own same-origin subresources.
@@ -104,7 +136,7 @@ const server = http.createServer((req, res) => {
 
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const PORT = server.address().port;
-const ORIGIN = `http://127.0.0.1:${PORT}`;
+const ORIGIN = `https://127.0.0.1:${PORT}`;
 HARNESS_FILE_URL = `${ORIGIN}/test/smoke/fixtures/smoke.sch`;
 
 // --- drive the browser -------------------------------------------------------------------------
@@ -113,40 +145,33 @@ const pageErrors = [];
 const consoleLines = [];
 
 const browser = await playwright.chromium.launch({ headless: !HEADED });
-const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, ignoreHTTPSErrors: true });
 page.on("pageerror", (e) => pageErrors.push(String(e)));
 page.on("console", (m) => consoleLines.push(m.text()));
 
-let pixelInfo = null;
+// Minimum geometry for a render to count as real rather than blank/partial. The fixture draws seven
+// symbols plus a title block, so a genuine render is far above this.
+const MIN_SHAPES = 10;
+
+let renderInfo = null;
 try {
 	await page.goto(`${ORIGIN}/harness.html`, { waitUntil: "load", timeout: TIMEOUT_MS });
-	await page.waitForSelector("canvas", { timeout: TIMEOUT_MS });
+	// visibility:hidden until the render finishes, so `state: "visible"` (not mere existence) is the
+	// signal that the viewer considers itself done.
+	await page.waitForSelector("svg", { state: "visible", timeout: TIMEOUT_MS });
 
-	// Poll until the canvas has actually been drawn to (more than one distinct pixel value).
-	pixelInfo = await page.waitForFunction(() => {
-		const c = document.querySelector("canvas");
-		if (!c || !c.width || !c.height) return null;
-		const g = c.getContext("2d", { willReadFrequently: true });
-		if (!g) return null;                       // a WebGL canvas: fall back to the size check below
-		const { data } = g.getImageData(0, 0, c.width, c.height);
-		const seen = new Set();
-		for (let i = 0; i < data.length; i += 4 * 97) {   // sparse stride: enough to prove non-uniformity
-			seen.add((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
-			if (seen.size > 1) return { w: c.width, h: c.height, distinct: seen.size };
-		}
-		return null;
-	}, null, { timeout: TIMEOUT_MS, polling: 500 }).then((h) => h.jsonValue());
+	renderInfo = await page.waitForFunction((minShapes) => {
+		const svg = document.querySelector("svg");
+		if (!svg) return null;
+		const shapes = svg.querySelectorAll("line, polygon, polyline, rect, circle, path, text, image");
+		if (shapes.length < minShapes) return null;
+		let box;
+		try { box = svg.getBBox(); } catch { return null; }   // getBBox throws while not rendered
+		if (!(box.width > 1 && box.height > 1)) return null;
+		return { shapes: shapes.length, w: Math.round(box.width), h: Math.round(box.height) };
+	}, MIN_SHAPES, { timeout: TIMEOUT_MS, polling: 500 }).then((h) => h.jsonValue());
 } catch (e) {
 	failures.push(`render did not complete within ${TIMEOUT_MS}ms: ${e.message}`);
-	// A WebGL-backed canvas yields no 2D context; accept a sized canvas plus a clean console instead.
-	const box = await page.evaluate(() => {
-		const c = document.querySelector("canvas");
-		return c ? { w: c.width, h: c.height } : null;
-	}).catch(() => null);
-	if (box && box.w > 0 && box.h > 0) {
-		failures.pop();
-		pixelInfo = { ...box, distinct: "n/a (non-2d canvas)" };
-	}
 }
 
 // --- assertions --------------------------------------------------------------------------------
@@ -161,12 +186,17 @@ const notFound = consoleLines.filter((l) => l.includes("[xschem-viewer] NOT FOUN
 if (pageErrors.length) failures.push(`uncaught page errors:\n    ${pageErrors.join("\n    ")}`);
 if (notFound.length) failures.push(`resolver reported NOT FOUND:\n    ${notFound.join("\n    ")}`);
 if (missing.length) failures.push(`symbols never resolved: ${missing.join(", ")}`);
-if (!pixelInfo) failures.push("canvas never produced drawn pixels");
+if (!renderInfo) failures.push("svg never produced drawn geometry");
+
+// `tcleval failed: …` lines are expected noise: symbols carry ngspice annotation expressions
+// (gm/id/vgs) that only evaluate against a live simulation. They are not render failures.
+const tclNoise = consoleLines.filter((l) => l.startsWith("tcleval failed:")).length;
 
 console.log("=== render smoke ===");
-console.log(`  canvas          : ${pixelInfo ? `${pixelInfo.w}x${pixelInfo.h}, distinct=${pixelInfo.distinct}` : "NONE"}`);
-console.log(`  symbols resolved: ${resolved.size ? [...resolved].join(", ") : "(none logged)"}`);
+console.log(`  svg             : ${renderInfo ? `${renderInfo.shapes} shapes, bbox ${renderInfo.w}x${renderInfo.h}` : "NONE"}`);
+console.log(`  symbols resolved: ${resolved.size}/${EXPECTED_SYMBOLS.length}${missing.length ? ` (missing: ${missing.join(", ")})` : ""}`);
 console.log(`  page errors     : ${pageErrors.length}`);
+console.log(`  tcleval notices : ${tclNoise} (expected; ngspice annotations, not render errors)`);
 
 // Always capture what the viewer actually drew — the only useful artifact when this fails in CI.
 const shot = path.join(HERE, "render-smoke.png");
@@ -176,6 +206,7 @@ catch (e) { console.log(`  screenshot      : failed (${e.message})`); }
 if (KEEP_OPEN) { console.log("\n--keep-open: press Ctrl-C to exit"); await new Promise(() => {}); }
 await browser.close();
 server.close();
+fs.rmSync(tls.dir, { recursive: true, force: true });
 
 if (failures.length) {
 	console.error("\nFAILED:");
