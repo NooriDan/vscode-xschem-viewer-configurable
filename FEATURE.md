@@ -17,7 +17,9 @@ tries, in order, and uses the first that returns a file:
 
 1. **`https://…`** — direct fetch (unchanged from upstream).
 2. **Absolute refs** (`P` starts with `/`) — if `P` falls under a configured library root, it is
-   mapped to that root's webview URI. Absolute refs outside every configured root are refused. *(new)*
+   mapped to that root's webview URI. An absolute ref outside every configured root matches no root
+   here and falls through; no later step can satisfy a rootless absolute path, so it ends as
+   "not found" — i.e. it is never fetched from outside the configured roots. *(new)*
 3. **Bundled library prefixes** — the extension's built-in map (`devices/`, `sky130_*`, `sg13g2_*`,
    …). *Changed:* on a miss/blocked fetch it now **falls through** instead of aborting; the
    `sg13g2_*` (IHP) entries now point at the bundled library instead of a CSP-blocked GitHub URL.
@@ -26,8 +28,10 @@ tries, in order, and uses the first that returns a file:
 5. **Schematic-relative** — resolved against the opened schematic's directory (upstream fallback).
 6. **Bare-name fallback** — a name with no `/` is retried as `devices/<name>`.
 
-Every fetch is guarded, so a CSP-blocked or missing candidate becomes a miss and falls through
-rather than throwing.
+Every fetch in the **fallback chain** (steps 2-6) is guarded, so a CSP-blocked or missing candidate
+becomes a miss and falls through rather than throwing. The step-1 explicit `https://` fetch is
+intentionally left unguarded: an explicit URL that cannot be fetched is a real error, not a miss to
+fall through from — and it is how the top-level schematic itself loads, before any fallback exists.
 
 ## Settings
 
@@ -36,7 +40,7 @@ rather than throwing.
 | `xschem.libraryPaths` | `[]` | Ordered `XSCHEM_LIBRARY_PATH`-style roots. Variables: `${env:VAR}`, `~`, `${workspaceFolder:NAME}` (named multi-root folder), bare `${workspaceFolder}` (schematic's own/innermost folder). Relative entries resolve against the schematic's workspace folder. Entries that aren't existing directories are skipped (logged under `resolveDebug`). |
 | `xschem.autoDetectXschemrc` | `true` | Walks up from the schematic's directory to the workspace root and adds every directory containing an `xschemrc` file. It also parses that file's `append XSCHEM_LIBRARY_PATH` lines, resolving the `[file dirname [info script]]` idiom to the rc's directory. Lines using `$env(...)` or `source` (i.e. a foundry/PDK `xschemrc` that may point out of tree) are skipped, and parsed roots are only added if they exist and lie inside the workspace — so out-of-tree PDKs stay opt-in via `xschem.libraryPaths`. |
 | `xschem.followXschemrcPdkSource` | `false` | **Opt-in.** Follows an `xschemrc`'s `source …/libs.tech/xschem/xschemrc` line to add that PDK's library directory. Deliberately reaches outside the workspace, so it is gated three ways (below). |
-| `xschem.includeWorkspaceFolders` | `false` | When enabled, adds only the schematic's own workspace folder to the webview's allowed roots (relative `../` sub-block refs). Off by default to keep the read scope minimal. |
+| `xschem.includeWorkspaceFolders` | `false` | When enabled, adds only the schematic's own workspace folder to the webview's allowed roots (relative `../` sub-block refs). A schematic opened from outside every workspace folder has no own folder, so nothing is added. Off by default to keep the read scope minimal. |
 | `xschem.resolveDebug` | `false` | Logs each resolution attempt and skipped path to the webview console. |
 
 ## Following a PDK `source` line (opt-in)
@@ -103,7 +107,7 @@ the pipeline above; `dist/extension.cjs` is still maintained as built output):
   (and optionally the schematic's own workspace folder) to the webview `localResourceRoots`, and
   injects the roots, the absolute-ref root map, and the debug flag into the webview HTML via a
   nonce'd inline script.
-- **`package.json`** — declares the four settings; version bumped to `1.2.x`.
+- **`package.json`** — declares the five `xschem.*` settings (see the table above; `package.json` is the source of truth).
 
 ## Verification
 

@@ -14,6 +14,7 @@ mkdir -p "$BUILD/extension"
 rsync -a \
   --exclude='.git' \
   --exclude='.github' \
+  --exclude='.vscode' \
   --exclude='.vsixbuild' \
   --exclude='node_modules' \
   --exclude='packaging' \

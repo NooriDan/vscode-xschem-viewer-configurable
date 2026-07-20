@@ -1,0 +1,39 @@
+{
+	// Debug the extension without installing a VSIX: this opens a second VS Code window
+	// ("Extension Development Host") running the extension straight from this folder.
+	// Open a .sch/.sym there to exercise it; breakpoints in dist/extension.cjs will hit.
+	//
+	// Note: only the extension HOST (dist/extension.cjs) is debuggable this way. The viewer
+	// itself runs inside the webview — inspect it with "Developer: Open Webview Developer Tools"
+	// in the Extension Development Host window, and turn on xschem.resolveDebug to see the
+	// resolver's per-attempt log there.
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "Run Extension (Development Host)",
+			"type": "extensionHost",
+			"request": "launch",
+			"args": [
+				"--extensionDevelopmentPath=${workspaceFolder}"
+			]
+		},
+		{
+			"name": "Run Extension on the test fixtures",
+			"type": "extensionHost",
+			"request": "launch",
+			"args": [
+				"--extensionDevelopmentPath=${workspaceFolder}",
+				"${workspaceFolder}/test/fixtures/proj"
+			]
+		},
+		{
+			"name": "Run Extension on the smoke-test schematic",
+			"type": "extensionHost",
+			"request": "launch",
+			"args": [
+				"--extensionDevelopmentPath=${workspaceFolder}",
+				"${workspaceFolder}/test/smoke/fixtures"
+			]
+		}
+	]
+}

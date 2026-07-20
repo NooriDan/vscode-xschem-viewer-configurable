@@ -229,9 +229,13 @@ const o = class o {
 		// workspace folder — not sibling roots — so relative "../" sub-block refs resolve without
 		// widening the webview's file-read scope to the whole (multi-root) workspace.
 		if (xcfg().get("includeWorkspaceFolders") === true && s.workspace.workspaceFolders) {
+			// ONLY the schematic's own folder. A schematic opened from outside every workspace folder
+			// has no "own" folder — previously that fell back to exposing ALL folders, which broke the
+			// documented contract ("never sibling roots") in exactly the case the user has least
+			// reason to expect it. Its own directory is already a root regardless, and anything else
+			// stays explicit via xschem.libraryPaths.
 			const own = s.workspace.getWorkspaceFolder(e.uri);
 			if (own) roots.push(own.uri);
-			else for (const wf of s.workspace.workspaceFolders) roots.push(wf.uri);
 		}
 		t.webview.options = { enableScripts: !0, localResourceRoots: roots };
 		this.activeSchematic = e;

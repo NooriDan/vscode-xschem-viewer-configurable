@@ -10,8 +10,18 @@ symbols live in a PDK, a shared block library, or sibling folders — not just n
 
 The extension renders `.sch` / `.sym` files inside VS Code using the
 [xschem-viewer](https://github.com/TinyTapeout/xschem-viewer) (xschem compiled to WASM) by
-Tiny Tapeout. See [FEATURE.md](FEATURE.md) for how resolution works and [TODO.md](TODO.md) for
-planned work and known limitations.
+Tiny Tapeout.
+
+### Documentation
+
+| | |
+|---|---|
+| **[Configuration guide](docs/CONFIGURATION.md)** | Where settings go, variables, `PDK_ROOT`, worked recipes, multi-root, Remote/WSL/containers |
+| **[Troubleshooting](docs/TROUBLESHOOTING.md)** | "Symbol not found", reading the debug log, every failure mode |
+| [FEATURE.md](FEATURE.md) | How resolution works internally; the implementation |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Project layout, development, releasing |
+| [TODO.md](TODO.md) | Planned work and known limitations |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
 
 ## Why this fork
 
@@ -54,6 +64,11 @@ Then run **Developer: Reload Window** (Command Palette). Reloading is required a
 > This is a standalone extension (id `NooriDan.xschem-viewer-configurable`). If you have the
 > upstream `barakh.vscode-xschem-viewer` installed, uninstall it to avoid two editors for `.sch`.
 
+> **Schematics opening as plain text?** The extension does not declare untrusted-workspace support,
+> so it stays disabled in **Restricted Mode** and the Xschem editor never registers. Check the
+> status bar for a shield icon and choose *Trust the authors of this folder*.
+> See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
 ## Settings
 
 | Setting | Default | Description |
@@ -62,7 +77,18 @@ Then run **Developer: Reload Window** (Command Palette). Reloading is required a
 | `xschem.autoDetectXschemrc` | `true` | Walk up from the schematic to the workspace root, adding any directory that contains an `xschemrc` as a search root. Resolves in-repo `shared/…` and sibling blocks with no configuration. |
 | `xschem.followXschemrcPdkSource` | `false` | **Opt-in.** Follow an `xschemrc`'s `source …/libs.tech/xschem/xschemrc` line to add that PDK's library directory (see [below](#following-a-pdk-source-line)). Only **open** PDKs are followed. |
 | `xschem.includeWorkspaceFolders` | `false` | When on, also expose the schematic's **own** workspace folder (for relative `../` refs). Off keeps the webview's read scope minimal. |
-| `xschem.resolveDebug` | `false` | Log every symbol-resolution attempt to the webview Dev Tools console (*Help ▸ Toggle Developer Tools*). |
+| `xschem.resolveDebug` | `false` | Log every symbol-resolution attempt. Output splits across **two** consoles — resolver attempts go to the webview (*Developer: Open Webview Developer Tools*), skipped/refused paths to the extension host (*Help ▸ Toggle Developer Tools*). See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#turn-on-diagnostics). |
+
+📖 **Where do these go, and how do variables/environment work?** See the
+**[Configuration guide](docs/CONFIGURATION.md)** — settings scopes (note: per-folder settings do
+*not* apply in multi-root workspaces), variable expansion, how `PDK_ROOT` reaches the extension,
+worked recipes, and Remote-SSH/WSL/container notes.
+
+> **Applying a change:** settings are read when a schematic tab is **opened** — there is no live
+> config listener. After editing any `xschem.*` setting, close and reopen the schematic tab
+> (switching away and back is not enough; the webview is retained). After installing or updating the
+> extension, run *Developer: Reload Window*. After changing an environment variable, fully quit and
+> relaunch VS Code.
 
 ### Example
 
@@ -117,28 +143,18 @@ Three gates apply, because this is the one place the extension reads out of tree
 Only the PDK's `libs.tech/xschem` directory is exposed to the webview, never `$PDK_ROOT` itself.
 Enable `xschem.resolveDebug` to see what was followed or refused.
 
-## Build the VSIX from source
+## Commands
 
-Requires `node` and `zip`:
+Two toolbar buttons appear on the editor title bar for `.sch` files. Both shell out to a **local
+`xschem` installation** on your `PATH` — they are not provided by the viewer:
 
-```bash
-./build-vsix.sh
-```
+| Button | Command | Runs |
+|---|---|---|
+| ▶ | *Run Xschem Simulation* | `xschem -x -n -S -q <file>` |
+| ✏ | *Open in Xschem* | `xschem <file>` |
 
-This regenerates `xschem-viewer-configurable-<version>.vsix` from the tree.
-
-## Rebuild the viewer from TypeScript source
-
-`dist/assets/index.js` is not hand-edited — it is reproducible from the upstream TypeScript sources.
-The viewer's WebAssembly is checked into upstream's repo, so this needs only Node (no emscripten):
-
-```bash
-./build-from-source.sh              # clone pinned upstream, patch, build, diff — stages only
-./build-from-source.sh --install    # overwrite dist/assets, then run npm test
-```
-
-The resolver change lives as a readable patch in [`patches/xschem-viewer/`](patches/xschem-viewer/)
-— the same patch offered upstream (see [docs/UPSTREAMING.md](docs/UPSTREAMING.md)).
+> If `xschem` isn't installed, these currently fail **silently** — no error is surfaced. Rendering
+> inside VS Code does not need `xschem` installed; only these two buttons do.
 
 ## Optional: IHP test galleries
 
@@ -146,45 +162,24 @@ IHP's `sg13g2_tests` example schematics aren't bundled, to keep the install lean
 you need them (git-ignored, and excluded from the VSIX):
 
 ```bash
-npm run fetch:ihp-tests             # or: scripts/fetch-ihp-testlibs.sh --remove
+npm run fetch:ihp-tests                      # fetch
+scripts/fetch-ihp-testlibs.sh --remove       # undo  (via npm: npm run fetch:ihp-tests -- --remove)
 ```
 
-## Tests
+## Development
 
-Node-only, no dependencies. They extract the shipped resolver and config helpers and drive them
-against the bundled libraries and fixtures (see [FEATURE.md](FEATURE.md#verification)):
+Building, testing, rebuilding the viewer from TypeScript source, and releasing are covered in
+**[CONTRIBUTING.md](CONTRIBUTING.md)**. In short:
 
 ```bash
-npm test
+npm test                  # dependency-free: resolver + config + manifest/integrity
+npm run test:smoke        # headless render check (needs playwright + openssl)
+./build-vsix.sh           # package the VSIX          (needs node, zip, rsync)
+./build-from-source.sh    # rebuild dist/assets from upstream TS (needs node, npm, git)
 ```
 
-- `test/resolver.test.cjs` — symbol resolution (bundled sky130/IHP/devices, configured roots,
-  schematic-relative, absolute refs, and refusals).
-- `test/config.test.cjs` — variable expansion, library-dir resolution, `xschemrc`-append parsing,
-  and the open-PDK `source`-following gates.
-- `test/manifest.test.cjs` — manifest, bundle integrity, that the patches are intact, and that every
-  fixture is valid xschem.
-
-CI runs the suite on Node 18/20/22 and builds the VSIX on every push/PR
-(`.github/workflows/ci.yml`).
-
-### Render smoke test
-
-`npm test` proves symbols *resolve*; it does not prove the viewer *draws*. The smoke test drives the
-real WASM viewer in headless Chromium and checks the canvas actually has pixels:
-
-```bash
-npm i --no-save playwright && npx playwright install --with-deps chromium
-npm run test:smoke
-```
-
-It renders `test/smoke/fixtures/smoke.sch` (IHP SG13G2 nmos+pmos, SKY130 nfet, stock devices) and
-asserts every symbol resolved and the SVG actually drew — currently 7/7 symbols, 97 shapes. A
-screenshot is written to `test/smoke/render-smoke.png`.
-
-Needs a Playwright browser and `openssl` (the harness serves over HTTPS, because the resolver loads
-the top-level schematic via its `https://` branch). Kept out of `npm test`, which stays
-dependency-free, and runs in its own workflow (`.github/workflows/smoke.yml`).
+CI runs the suite on Node 18/20/22 and builds the VSIX on every pull request and every push to
+`main` (`.github/workflows/ci.yml`); `smoke.yml` runs the headless render check.
 
 ## Attribution & license
 

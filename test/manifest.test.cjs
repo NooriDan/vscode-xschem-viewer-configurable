@@ -78,6 +78,14 @@ for (const d of ["devices", "sky130/sky130_fd_pr"]) {
 	ok("bundled lib dir " + d, fs.existsSync(path.join(DIST, "xschem_lib", d)) && fs.readdirSync(path.join(DIST, "xschem_lib", d)).some((f) => f.endsWith(".sym")));
 }
 
+// --- includeWorkspaceFolders exposes ONLY the schematic's own folder ---
+// The docs state this as a security property ("never sibling roots of a multi-root workspace").
+// An earlier fallback added EVERY workspace folder when the schematic sat outside all of them,
+// silently breaking that contract. Guard the narrower behavior structurally.
+const iwfAt = ext.indexOf('includeWorkspaceFolders") === true');
+const iwf = iwfAt >= 0 ? ext.slice(iwfAt, iwfAt + 600) : "";
+ok("includeWorkspaceFolders adds only the owning folder", /getWorkspaceFolder\(e\.uri\)/.test(iwf) && !/for \(const wf of s\.workspace\.workspaceFolders\) roots\.push/.test(ext));
+
 // --- fixtures are valid xschem ---
 // Every .sch/.sym in the test tree must carry a well-formed version header. The real parser
 // requires BOTH `version=` and `file_version=`; omitting the latter fails with a confusing
