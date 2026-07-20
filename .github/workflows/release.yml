@@ -12,7 +12,11 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      # Optional: set this repo secret to also publish to the Open VSX registry.
+      # Add these as repo secrets (Settings -> Secrets and variables -> Actions) to enable publishing:
+      #   VSCE_PAT   -> VS Code Marketplace (Azure DevOps PAT, Marketplace: Manage scope)
+      #   OVSX_TOKEN -> Open VSX registry (open-vsx.org access token)
+      # Publishing runs on a pushed v* tag, or a manual "Run workflow" dispatch.
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
       OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -29,30 +33,49 @@ jobs:
       - name: Build VSIX
         run: ./build-vsix.sh
 
-      - name: Confirm VSIX built
+      - name: Resolve VSIX path
+        id: vsix
         run: |
           VER="$(node -e "console.log(require('./package.json').version)")"
-          test -f "xschem-viewer-configurable-${VER}.vsix" && echo "Built xschem-viewer-configurable-${VER}.vsix"
+          VSIX="xschem-viewer-configurable-${VER}.vsix"
+          test -f "$VSIX"
+          echo "path=$VSIX" >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Built $VSIX"
 
       - name: Verify tag matches package.json version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          VER="$(node -e "console.log(require('./package.json').version)")"
-          echo "package.json version: $VER ; tag: ${GITHUB_REF_NAME}"
-          if [ "${GITHUB_REF_NAME}" != "v${VER}" ]; then
-            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json v${VER}"; exit 1
+          if [ "${GITHUB_REF_NAME}" != "v${{ steps.vsix.outputs.version }}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json v${{ steps.vsix.outputs.version }}"; exit 1
           fi
 
-      - name: Create GitHub Release
+      - name: Create or update GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
+          VSIX: ${{ steps.vsix.outputs.path }}
         run: |
-          VSIX="$(ls xschem-viewer-configurable-*.vsix | head -1)"
-          gh release create "${GITHUB_REF_NAME}" "$VSIX" \
-            --title "${GITHUB_REF_NAME}" \
-            --notes "Install: \`code --install-extension ${VSIX} --force\` then **Developer: Reload Window**. See CHANGELOG.md for details."
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "$VSIX" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "$VSIX" \
+              --title "${GITHUB_REF_NAME}" \
+              --notes "Install: \`code --install-extension ${VSIX} --force\` then **Developer: Reload Window**. See CHANGELOG.md for details."
+          fi
 
-      - name: Publish to Open VSX (optional)
-        if: ${{ env.OVSX_TOKEN != '' }}
-        run: npx --yes ovsx publish xschem-viewer-configurable-*.vsix -p "$OVSX_TOKEN"
+      - name: Publish to VS Code Marketplace
+        if: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && env.VSCE_PAT != '' }}
+        run: npx --yes @vscode/vsce publish --packagePath "${{ steps.vsix.outputs.path }}" -p "$VSCE_PAT"
+
+      - name: Publish to Open VSX
+        if: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && env.OVSX_TOKEN != '' }}
+        run: |
+          npx --yes ovsx create-namespace NooriDan -p "$OVSX_TOKEN" || true
+          npx --yes ovsx publish "${{ steps.vsix.outputs.path }}" -p "$OVSX_TOKEN"
+
+      - name: Publishing summary
+        run: |
+          echo "### Release ${{ steps.vsix.outputs.path }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Marketplace: ${{ (env.VSCE_PAT != '') && 'attempted (VSCE_PAT set)' || 'skipped (no VSCE_PAT secret)' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Open VSX: ${{ (env.OVSX_TOKEN != '') && 'attempted (OVSX_TOKEN set)' || 'skipped (no OVSX_TOKEN secret)' }}" >> "$GITHUB_STEP_SUMMARY"

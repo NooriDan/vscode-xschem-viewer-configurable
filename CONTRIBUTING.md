@@ -52,7 +52,23 @@ Bump the version in `package.json`, update `CHANGELOG.md`, then tag:
 git tag v<version> && git push origin v<version>
 ```
 
-The `release` workflow builds the VSIX and attaches it to a GitHub Release.
+The `release` workflow tests, builds the VSIX, and attaches it to a GitHub Release.
+
+### Publishing to the registries (optional)
+
+The same workflow also publishes to the extension registries when the matching repo secret is set
+(Settings → Secrets and variables → Actions). No `az`/CLI is needed locally.
+
+- **`VSCE_PAT`** → VS Code Marketplace. Requires a Marketplace publisher named `NooriDan`
+  (create at <https://marketplace.visualstudio.com/manage>) and an Azure DevOps Personal Access Token
+  with **Marketplace: Manage** scope and **All accessible organizations**
+  (create at `https://dev.azure.com/<org>/_usersSettings/tokens`).
+- **`OVSX_TOKEN`** → Open VSX. Sign in at <https://open-vsx.org>, accept the Eclipse publisher
+  agreement, and create an access token.
+
+With a secret set, publishing happens on any pushed `v*` tag **or** a manual **Run workflow**
+(dispatch) — so after adding the secret you can publish the current `package.json` version without
+re-tagging. Registries reject a version that already exists; bump the version to re-publish.
 
 ## License
 
