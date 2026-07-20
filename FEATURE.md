@@ -77,12 +77,20 @@ this needs only Node and a Vite build — no emscripten toolchain.
 
 It clones [`TinyTapeout/xschem-viewer`](https://github.com/TinyTapeout/xschem-viewer) at a pinned
 commit, applies [`patches/xschem-viewer/*.patch`](patches/xschem-viewer/), installs a vite config
-that emits un-hashed asset names, and builds:
+that emits un-hashed asset names, regenerates the parser, and builds:
 
 - `0001-configurable-library-search-roots.patch` — the resolver, as readable TypeScript. This is
   also the patch offered upstream (see [docs/UPSTREAMING.md](docs/UPSTREAMING.md)).
 - `0002-bundled-local-libraries.patch` — repoints the library map at the bundled, per-PDK
   namespaced `xschem_lib/<pdk>/` directories.
+- `0003-xschem-faithful-property-tokenization.patch` — property tokenization as real xschem does it:
+  an unescaped `"` toggles quote parity instead of delimiting the value, so a value containing inner
+  quotes parses instead of aborting the whole file.
+
+The parser-regeneration step matters: upstream checks the **generated** `src/parser/xschem-parser.ts`
+into the repo and its `build` script is `vite build` alone, so a `.peg` grammar patch is silently
+inert unless `npm run build:parser` runs first. The pipeline is therefore clone → apply patches →
+`npm run build:parser` → `vite build`.
 
 It **stages only** by default and reports a per-file diff against the committed bundle; `--install`
 is required to overwrite `dist/assets`. A rebuild reproduces `wacl.wasm` and `index.css`
@@ -153,8 +161,10 @@ Two things the harness must get right, both learned the hard way:
 - **It waits for the `<svg>` to become *visible*, not merely to exist.** The viewer renders to SVG
   and holds it at `visibility: hidden` until the render completes, so visibility is the done signal.
 
-Current result: **7/7 symbols resolved, 97 SVG shapes, bbox 1180×291, 0 page errors.** The check is
+Current result: **8/8 symbols resolved, 110 SVG shapes, bbox 1180×513, 0 page errors.** The check is
 mutation-tested — hiding one bundled symbol makes it exit non-zero and name the missing symbol.
+The eighth symbol carries a bare-inner-quote property value (patch 0003), but note the smoke
+assertions are value-blind: `test/parser.test.cjs` is the actual guard for tokenization.
 (`tcleval failed:` console lines are expected noise: symbols carry ngspice `gm`/`id`/`vgs`
 annotations that only evaluate against a live simulation.)
 

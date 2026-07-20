@@ -45,9 +45,17 @@ Breakpoints in `dist/extension.cjs` hit in that window. The viewer itself runs i
 inspect it with *Developer: Open Webview Developer Tools* and turn on `xschem.resolveDebug`. Note
 the two log destinations described in [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#turn-on-diagnostics).
 
-### Changing the resolver
+### Changing the viewer bundle
 
-Edit `patches/xschem-viewer/0001-configurable-library-search-roots.patch`, then:
+Pick the patch that governs the concern:
+
+| Patch  | Covers |
+| ------ | ------ |
+| `0001-configurable-library-search-roots.patch` | the resolver / search roots |
+| `0002-bundled-local-libraries.patch`           | the bundled library map |
+| `0003-xschem-faithful-property-tokenization.patch` | the `.peg` property grammar |
+
+Edit the relevant `patches/xschem-viewer/*.patch`, then:
 
 ```bash
 ./build-from-source.sh              # build + diff against the committed bundle (stages only)
@@ -55,8 +63,13 @@ Edit `patches/xschem-viewer/0001-configurable-library-search-roots.patch`, then:
 npm run test:smoke                  # ALWAYS verify a real render after --install
 ```
 
-`npm test` checks resolution logic, not that the WASM viewer still paints — so a bundle swap needs
-the smoke test (or a manual open) before committing.
+`npm test` checks resolution logic and property tokenization, not that the WASM viewer still paints —
+so a bundle swap needs the smoke test (or a manual open) before committing.
+
+Grammar changes have one extra trap: upstream checks the **generated** `src/parser/xschem-parser.ts`
+into its repo and its `build` is `vite build` alone, so a `.peg` edit is silently inert unless the
+parser is regenerated. `build-from-source.sh` runs `npm run build:parser` for you — but if you build
+by hand, run it yourself or you will ship a bundle that ignores your change.
 
 ### Rendering verification
 

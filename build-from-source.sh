@@ -6,9 +6,10 @@
 #
 # What it does:
 #   1. clones TinyTapeout/xschem-viewer at the pinned commit below
-#   2. applies patches/xschem-viewer/*.patch  (the configurable resolver + the local library map)
+#   2. applies patches/xschem-viewer/*.patch  (the configurable resolver, the local library map, and
+#      the xschem-faithful property grammar)
 #   3. installs patches/xschem-viewer/vite.config.js (un-hashed asset names, relative base)
-#   4. builds, and stages the result under .fromsource/
+#   4. regenerates the parser from the .peg grammar, builds, and stages the result under .fromsource/
 #
 # By default it STAGES ONLY and diffs against the committed bundle — it will not overwrite
 # dist/assets until you pass --install, so a rebuild can never silently change the shipped artifact.
@@ -65,6 +66,19 @@ cp patches/xschem-viewer/vite.config.js "$SRC/vite.config.js"
 echo "==> installing dependencies"
 ( cd "$SRC" && npm ci --no-audit --no-fund --silent )
 
+# src/parser/xschem-parser.ts is CHECKED IN upstream and `npm run build` is `vite build` alone, so a
+# patch to the .peg grammar is inert unless the parser is regenerated first. 0003 patches the grammar.
+# Checked explicitly so a renamed/removed upstream script fails with an actionable message instead of
+# a bare npm error — silently skipping this step would ship a bundle that ignores patch 0003.
+node -e "process.exit(require('$PWD/$SRC/package.json').scripts['build:parser'] ? 0 : 1)" || {
+  echo "error: upstream no longer defines a 'build:parser' script at ${UPSTREAM_REF:0:12}." >&2
+  echo "       Patch 0003 edits the .peg grammar, which is inert unless the parser is regenerated." >&2
+  echo "       Regenerate it directly with peggy, or re-cut 0003 against the new source layout." >&2
+  exit 1
+}
+echo "==> generating parser from grammar"
+( cd "$SRC" && npm run build:parser )
+
 echo "==> building"
 ( cd "$SRC" && npm run build )
 
@@ -80,12 +94,18 @@ done
 
 echo
 echo "==> comparison with the committed bundle"
+# vite.config.js injects `built <ISO timestamp>` into index.js, so a byte-compare of that one file
+# always DIFFERS even on an otherwise identical rebuild. Normalize the stamp before comparing, and
+# say so — otherwise the verification contract this script exists for is unusable for index.js.
+norm() { sed -E 's/built [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z/built <TIMESTAMP>/g' "$1"; }
 changed=0
 for f in index.js index.css wacl.js wacl.wasm; do
   if [ ! -f "$built/$f" ]; then continue; fi
   if [ ! -f "dist/assets/$f" ]; then echo "    NEW      $f"; changed=1; continue; fi
   if cmp -s "$built/$f" "dist/assets/$f"; then
     printf '    same     %s\n' "$f"
+  elif diff -q <(norm "$built/$f") <(norm "dist/assets/$f") >/dev/null 2>&1; then
+    printf '    same     %-12s (build timestamp only)\n' "$f"
   else
     printf '    DIFFERS  %-12s (committed %s bytes -> built %s bytes)\n' \
       "$f" "$(wc -c < "dist/assets/$f")" "$(wc -c < "$built/$f")"

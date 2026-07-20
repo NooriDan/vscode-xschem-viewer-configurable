@@ -26,7 +26,8 @@ It applies cleanly to `4a2bc83` and is the same patch this fork builds and ships
 
 Do **not** include `0002-bundled-local-libraries.patch` — that one repoints the library map at this
 extension's bundled copies, which is specific to a packaged/offline consumer, not something upstream
-wants.
+wants. Do **not** include `0003-xschem-faithful-property-tokenization.patch` either; the grammar fix
+is maintained as a local patch in this repo and is out of scope for this PR.
 
 <details>
 <summary>Suggested PR title and body</summary>

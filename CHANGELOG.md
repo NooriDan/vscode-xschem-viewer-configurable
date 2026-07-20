@@ -18,7 +18,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   Stages and diffs by default; `--install` is required to overwrite the shipped assets. A rebuild
   reproduces `wacl.wasm` and `index.css` byte-identically and passes the full resolver suite.
 - **`npm run test:smoke`** + a `Render smoke` CI workflow — drives the real WASM viewer in headless
-  Chromium and asserts every symbol resolves and the SVG actually drew (7/7 symbols, 97 shapes,
+  Chromium and asserts every symbol resolves and the SVG actually drew (8/8 symbols, 110 shapes,
   0 page errors; mutation-tested). Serves over HTTPS, because the resolver loads the top-level
   schematic through its `https://` branch while `baseURL` is still unset — an HTTP harness fails
   against a path that cannot occur in the webview. Kept out of `npm test`, which stays
@@ -41,6 +41,27 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   binary and currently fail silently if it isn't installed — previously undocumented.
 
 ### Changed
+- **The shipped viewer bundle advances across upstream `ddd97ca..4a2bc83`** (2024-12-11 → 2025-12-14).
+  The committed bundle had drifted a year behind the pinned `UPSTREAM_REF` — which is why the
+  tokenization error text above names a character class the pinned grammar no longer emits — so
+  rebuilding it picks up seven upstream commits along with the local patches: a Firefox rendering
+  fix, Spectre netlist parsing, resilience for invalid parser input, a fix for invalid width/height
+  console warnings, and a vite 6 / vitest 4 toolchain bump. Blast radius is limited to the parser
+  and `SVGRenderer.ts`; the resolver contract and `wacl.wasm` are unchanged.
+- `build-from-source.sh` now runs `npm run build:parser` before `npm run build`. Upstream checks
+  `src/parser/xschem-parser.ts` into the repo and `build` is `vite build` alone, so **any** grammar
+  patch was silently inert without this step.
+- **`npm test` now covers property tokenization** via a new dependency-free `test/parser.test.cjs`.
+  It lifts the generated peggy parser out of the shipped `dist/assets/index.js` with `node:vm` (a
+  plain `import()` dies on `document is not defined`) and asserts exact parsed **values** — inner
+  quotes, the `;` separator, the backslash fold at n=1/2/4/6, and that every bundled library file
+  parses bar the known-bad allowlist. Mutation-tested: 15 of its 20 assertions fail against the
+  pre-fix bundle.
+- The render smoke fixture instantiates `devices/code_shown.sym` carrying a bare-inner-quote value,
+  exercising the tokenization fix through the real WASM bundle end-to-end. Note this is a belt, not
+  the guard: at the pinned ref the *unpatched* grammar truncates that value rather than throwing,
+  and the smoke assertions are value-blind — `test/parser.test.cjs` is what actually fails on a
+  regression.
 - **`xschem.includeWorkspaceFolders` no longer falls back to exposing every workspace folder.** When
   a schematic sits outside all of them there is no "own" folder, and the previous fallback added
   *all* of them — contradicting the documented contract ("only the schematic's own workspace folder,
@@ -48,6 +69,28 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   directory remains a root regardless; anything wider is now explicit via `xschem.libraryPaths`.
 
 ### Fixed
+- **Property values with bare inner quotes no longer break a schematic.** A value such as
+  `value="… defined by "let" to … defined by "set" …"` (an ngspice comment inside a `code_shown`
+  block) aborted the *entire* file with `SyntaxError: Expected "=", "}", … but "\"" found`, leaving
+  a blank canvas. The grammar modelled a value as one quoted span *or* one bare token; real xschem
+  treats an unescaped `"` as a **parity toggle** (`token.c:438` `get_tok_value()`) and ends the value
+  only at the first `SPACE()` char reached while unquoted — so a value is a *concatenation* of
+  alternating quoted and bare runs. `patches/xschem-viewer/0003-xschem-faithful-property-tokenization.patch`
+  reimplements that faithfully, including the non-linear two-pass backslash fold
+  (`save.c:3260` `load_ascii_string()` unescapes, then `get_tok_value()` re-escapes on the result)
+  and `;` as a pair separator.
+
+  Measured across a 3369-file local corpus — this repo's 1103 bundled library files plus
+  locally-installed open PDKs and private project schematics, so the total is **not reproducible
+  from this repo alone**: **42 parse failures → 2**, 40 newly parsed, **0 newly broken**, with each
+  newly-parsing file's output spot-compared against real xschem V3.4.5. The reproducible part is
+  asserted by `npm test`: all 1103 bundled library files parse except one known-bad file
+  (`sg13g2_a221oi_1.sym`, which puts `G {}` before its `v {xschem …}` header — a record-ordering
+  issue unrelated to tokenization, tracked in TODO.md).
+
+  Two behaviours here are deliberately xschem-faithful rather than lenient, and are pinned by tests:
+  an unescaped `}` still ends the record even inside quotes, and a value with **odd** quote parity
+  swallows the rest of the line (later `name=value` pairs on it are silently lost).
 - Test fixtures `proj/altlib/widget.sym` and `proj/quotedlib/widget.sym` were missing the required
   `file_version=` field and failed to parse when opened in the viewer. A new dependency-free
   manifest check now asserts every fixture has a well-formed xschem version header.

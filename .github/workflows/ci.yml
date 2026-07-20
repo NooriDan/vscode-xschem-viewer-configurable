@@ -34,9 +34,16 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zip rsync
       - name: Build VSIX
         run: ./build-vsix.sh
+      # Resolve the name from package.json rather than globbing. The repo tracks a built .vsix, so a
+      # glob + `head -1` would pick the stale checked-in file the moment its version sorts below the
+      # one just built (e.g. tracked 1.4.0 vs built 1.4.1) and verify an artifact CI did not produce.
+      - name: Resolve VSIX path
+        id: vsix
+        run: echo "path=xschem-viewer-configurable-$(node -p "require('./package.json').version").vsix" >> "$GITHUB_OUTPUT"
       - name: Verify VSIX is well-formed
         run: |
-          VSIX="$(ls xschem-viewer-configurable-*.vsix | head -1)"
+          VSIX="${{ steps.vsix.outputs.path }}"
+          test -f "$VSIX"
           echo "Built: $VSIX"
           unzip -l "$VSIX" | grep -q 'extension/package.json'
           unzip -l "$VSIX" | grep -q 'extension.vsixmanifest'
@@ -45,5 +52,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vsix
-          path: xschem-viewer-configurable-*.vsix
+          path: ${{ steps.vsix.outputs.path }}
           if-no-files-found: error

@@ -29,9 +29,14 @@ Planned improvements and known limitations. See [FEATURE.md](FEATURE.md) for cur
       install stays lean (1.4.0).
 - [x] **Headless render smoke test** — `npm run test:smoke` + the `Render smoke` workflow drive the
       real WASM viewer in headless Chromium and assert the SVG actually renders. **Verified green**:
-      7/7 symbols resolved (IHP nmos+pmos, SKY130 nfet, stock devices), 97 SVG shapes, bbox
-      1180×291, 0 page errors — and mutation-tested (hiding one bundled symbol makes it exit 1)
-      (1.4.0).
+      8/8 symbols resolved (IHP nmos+pmos, SKY130 nfet, stock devices, `code_shown`), 110 SVG
+      shapes, bbox 1180×513, 0 page errors — and mutation-tested (hiding one bundled symbol makes
+      it exit 1) (1.4.0).
+- [x] **xschem-faithful property tokenization** — an unescaped `"` toggles quote parity rather than
+      delimiting the value, so a property carrying inner quotes (an ngspice comment in a
+      `code_shown` block) no longer aborts the entire file into a blank canvas. Local patch 0003;
+      guarded by `test/parser.test.cjs`, which asserts exact parsed values plus a whole-corpus parse
+      invariant and runs in the required Node matrix (1.4.0).
 
 ## Planned improvements
 
@@ -56,6 +61,22 @@ Planned improvements and known limitations. See [FEATURE.md](FEATURE.md) for cur
 
 ## Known limitations
 
+- [ ] **One bundled symbol does not parse.** `ihp-sg13g2/sg13g2_stdcells/sg13g2_a221oi_1.sym` emits
+      `G {}` *before* its `v {xschem …}` header, and the grammar only accepts the version block as
+      the very first element, so the symbol renders blank. Pre-existing and unrelated to
+      tokenization — it fails identically on the pre-0003 grammar. It is the sole entry in
+      `test/parser.test.cjs`'s known-bad allowlist. Fixing it means relaxing `Start` to let the
+      version block appear among the object definitions, then re-running the corpus sweep.
+- [ ] **Two tokenization behaviours are faithful to xschem but lossy**, and are pinned by tests
+      rather than fixed: an unescaped `}` ends the record even inside a quoted value (so a
+      hand-edited file with `a="p}q"` fails to parse), and a value with **odd** quote parity
+      swallows the rest of its line, silently dropping any later `name=value` pairs on it. Real
+      xschem does both. Making the first degrade to a partial render needs top-level error
+      tolerance in the grammar, which is a larger change than patch 0003.
+- [ ] **`dist/assets/index.js` is not byte-reproducible.** `patches/xschem-viewer/vite.config.js`
+      injects `new Date().toISOString()` as `__BUILD_TIME__`, so a rebuild always differs from the
+      committed bundle by that one string. `build-from-source.sh` normalizes it when comparing, but
+      true determinism would mean deriving the stamp from the pinned upstream commit date.
 - [ ] **Config-schema registration needs a full window reload** after (re)install.
 - [ ] **The smoke test needs `openssl` and a Playwright browser.** It serves over HTTPS because the
       resolver's top-level load is `path.startsWith('https://') -> fetch(path)`; an HTTP harness
