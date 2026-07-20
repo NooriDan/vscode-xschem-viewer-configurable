@@ -18,8 +18,11 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   Stages and diffs by default; `--install` is required to overwrite the shipped assets. A rebuild
   reproduces `wacl.wasm` and `index.css` byte-identically and passes the full resolver suite.
 - **`npm run test:smoke`** + a `Render smoke` CI workflow — drives the real WASM viewer in headless
-  Chromium and asserts symbols resolve and the canvas is actually drawn. Kept out of `npm test`,
-  which stays dependency-free.
+  Chromium and asserts every symbol resolves and the SVG actually drew (7/7 symbols, 97 shapes,
+  0 page errors; mutation-tested). Serves over HTTPS, because the resolver loads the top-level
+  schematic through its `https://` branch while `baseURL` is still unset — an HTTP harness fails
+  against a path that cannot occur in the webview. Kept out of `npm test`, which stays
+  dependency-free.
 - **`scripts/fetch-ihp-testlibs.sh`** (`npm run fetch:ihp-tests`) — fetches IHP's `sg13g2_tests`
   galleries on demand. Git-ignored and excluded from the VSIX, so the default install stays lean;
   the shipped library map already routes `sg13g2_test*` at them.
@@ -30,6 +33,8 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - Test fixtures `proj/altlib/widget.sym` and `proj/quotedlib/widget.sym` were missing the required
   `file_version=` field and failed to parse when opened in the viewer. A new dependency-free
   manifest check now asserts every fixture has a well-formed xschem version header.
+- `build-vsix.sh` did not exclude `node_modules`, so packaging after any `npm i` silently shipped
+  dependencies inside the VSIX. (Surfaced by installing Playwright for the smoke test.)
 - The resolver test extracted `fetchContent` by literal signature (`async fetchContent(i){`), which
   silently stops matching after any rebuild renames the parameter. It now matches by regex and
   resolves minified helper identifiers through a scope proxy, so it validates the committed bundle

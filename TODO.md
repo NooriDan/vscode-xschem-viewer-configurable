@@ -28,8 +28,10 @@ Planned improvements and known limitations. See [FEATURE.md](FEATURE.md) for cur
       `sg13g2_tests` galleries when wanted; git-ignored and excluded from the VSIX so the default
       install stays lean (1.4.0).
 - [x] **Headless render smoke test** — `npm run test:smoke` + the `Render smoke` workflow drive the
-      WASM viewer in headless Chromium (1.4.0). *See the caveat below — it has not had a green run
-      on real CI hardware yet.*
+      real WASM viewer in headless Chromium and assert the SVG actually renders. **Verified green**:
+      7/7 symbols resolved (IHP nmos+pmos, SKY130 nfet, stock devices), 97 SVG shapes, bbox
+      1180×291, 0 page errors — and mutation-tested (hiding one bundled symbol makes it exit 1)
+      (1.4.0).
 
 ## Planned improvements
 
@@ -42,11 +44,10 @@ Planned improvements and known limitations. See [FEATURE.md](FEATURE.md) for cur
       `TinyTapeout/xschem-viewer` (`src/model/LibraryLoader.ts`), the host settings to
       `barakhoffer/vscode-xschem-viewer` (`src/extension.ts`). **Nothing has been pushed** — opening
       them is a deliberate decision, and PR 2 still needs the host logic ported back to TypeScript.
-- [ ] **Validate the render smoke test on CI.** It is written and its static-server half is verified,
-      but no browser was available in the authoring environment, so the Playwright half has never
-      actually run. Expect to iterate on selectors/timing during its first CI runs. It lives in its
-      own workflow so a failure cannot block the resolver matrix; promote it to a required check
-      once it has a track record.
+- [ ] **Promote the render smoke test to a required check.** It passes locally and is
+      mutation-tested, but has not yet run on GitHub-hosted runners. It lives in its own workflow so
+      an infrastructure flake cannot block the resolver matrix; make it required once it has a track
+      record there.
 - [ ] **Port `dist/extension.cjs` to source too.** `build-from-source.sh` covers the viewer bundle;
       the extension host is still maintained as built output. Upstream's `src/extension.ts` is the
       natural base, and doing this is a prerequisite for upstream PR 2.
@@ -56,9 +57,10 @@ Planned improvements and known limitations. See [FEATURE.md](FEATURE.md) for cur
 ## Known limitations
 
 - [ ] **Config-schema registration needs a full window reload** after (re)install.
-- [ ] **Render verification is not yet proven in CI** — see the smoke-test item above. Until it has
-      a green run, correctness is still effectively validated by the resolver/config/manifest tests
-      plus manual checks.
+- [ ] **The smoke test needs `openssl` and a Playwright browser.** It serves over HTTPS because the
+      resolver's top-level load is `path.startsWith('https://') -> fetch(path)`; an HTTP harness
+      exercises a path that cannot occur in the webview and fails misleadingly. Cert generation
+      shells out to `openssl`.
 - [ ] **`${workspaceFolder}` bare semantics.** In a multi-root workspace it resolves to the
       schematic's innermost containing folder; `${workspaceFolder:NAME}` is the unambiguous form.
 - [ ] **`includeWorkspaceFolders` is off by default**, so relative `../` sub-block refs above the

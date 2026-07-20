@@ -15,6 +15,7 @@ rsync -a \
   --exclude='.git' \
   --exclude='.github' \
   --exclude='.vsixbuild' \
+  --exclude='node_modules' \
   --exclude='packaging' \
   --exclude='test' \
   --exclude='scripts' \
