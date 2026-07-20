@@ -1,13 +1,18 @@
 {
-	"name": "vscode-xschem-viewer",
-	"version": "1.2.2",
+	"name": "xschem-viewer-configurable",
+	"version": "1.3.0",
 	"displayName": "Xschem Viewer (Configurable)",
-	"description": "Explore and visualize XSchem schematics in vscode, using xschem-viewer by Tiny Tapeout. Configurable-library-path fork: resolves PDK devices (incl. bundled IHP sg13g2) and sub-block symbols from XSCHEM_LIBRARY_PATH-style search roots.",
+	"description": "View XSchem .sch/.sym schematics in VS Code with configurable library search paths. Bundles the SKY130 and IHP SG13G2 device symbols so PDK schematics render with zero config.",
 	"icon": "xschem_logo.png",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/NooriDan/vscode-xschem-viewer-configurable.git"
 	},
+	"bugs": {
+		"url": "https://github.com/NooriDan/vscode-xschem-viewer-configurable/issues"
+	},
+	"homepage": "https://github.com/NooriDan/vscode-xschem-viewer-configurable#readme",
+	"qna": false,
 	"type": "module",
 	"scripts": {
 		"test": "node test/resolver.test.cjs && node test/config.test.cjs && node test/manifest.test.cjs",
@@ -55,7 +60,7 @@
 		},
 		"customEditors": [
 			{
-				"viewType": "xschem.viewXschem",
+				"viewType": "xschemViewerConfigurable.editor",
 				"displayName": "Xschem",
 				"selector": [
 					{
@@ -69,12 +74,12 @@
 		],
 		"commands": [
 			{
-				"command": "xschem.runSimulation",
+				"command": "xschemViewerConfigurable.runSimulation",
 				"title": "Run Xschem Simulation",
 				"icon": "$(play)"
 			},
 			{
-				"command": "xschem.editSchematic",
+				"command": "xschemViewerConfigurable.editSchematic",
 				"title": "Open in Xschem",
 				"icon": "$(pencil)"
 			}
@@ -82,31 +87,25 @@
 		"menus": {
 			"editor/title": [
 				{
-					"command": "xschem.runSimulation",
+					"command": "xschemViewerConfigurable.runSimulation",
 					"group": "navigation",
 					"when": "resourceExtname == .sch"
 				},
 				{
-					"command": "xschem.editSchematic",
+					"command": "xschemViewerConfigurable.editSchematic",
 					"group": "navigation",
 					"when": "resourceExtname == .sch"
 				}
 			]
 		}
 	},
-	"author": "Barak Hoffer",
-	"publisher": "barakh",
+	"author": "NooriDan",
+	"publisher": "NooriDan",
+	"contributors": [
+		"Barak Hoffer (original vscode-xschem-viewer)",
+		"Tiny Tapeout (xschem-viewer)"
+	],
 	"license": "Apache-2.0",
-	"devDependencies": {
-		"@types/node": "^22.10.2",
-		"@types/vscode": "^1.73.0",
-		"@types/vscode-webview": "^1.57.0",
-		"eslint": "^8.57.0",
-		"eslint-config-love": "^43.0.1",
-		"typescript": "~5.3.0",
-		"vite": "^5.1.5",
-		"vite-plugin-string-replace": "^1.1.3"
-	},
 	"engines": {
 		"vscode": "^1.80.0"
 	}

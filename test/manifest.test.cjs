@@ -25,8 +25,16 @@ ok("autoDetectXschemrc default true", props["xschem.autoDetectXschemrc"].default
 ok("includeWorkspaceFolders default false", props["xschem.includeWorkspaceFolders"].default === false);
 ok("resolveDebug default false", props["xschem.resolveDebug"].default === false);
 const ce = pkg.contributes.customEditors[0];
-ok("registers custom editor for .sch and .sym", ce && ce.viewType === "xschem.viewXschem" && ce.selector.some((x) => x.filenamePattern === "*.sch") && ce.selector.some((x) => x.filenamePattern === "*.sym"));
-ok("registers run/edit commands", pkg.contributes.commands.some((c) => c.command === "xschem.runSimulation") && pkg.contributes.commands.some((c) => c.command === "xschem.editSchematic"));
+ok("registers custom editor for .sch and .sym", ce && ce.viewType === "xschemViewerConfigurable.editor" && ce.selector.some((x) => x.filenamePattern === "*.sch") && ce.selector.some((x) => x.filenamePattern === "*.sym"));
+ok("registers run/edit commands", pkg.contributes.commands.some((c) => c.command === "xschemViewerConfigurable.runSimulation") && pkg.contributes.commands.some((c) => c.command === "xschemViewerConfigurable.editSchematic"));
+
+// --- standalone identity (no longer masquerading as the upstream publisher/ids) ---
+ok("standalone publisher", pkg.publisher === "NooriDan");
+ok("standalone extension name", pkg.name === "xschem-viewer-configurable");
+ok("does not reuse upstream viewType", ce.viewType !== "xschem.viewXschem");
+ok("host registers the manifest's viewType", ext.includes('"' + ce.viewType + '"'));
+for (const c of pkg.contributes.commands) ok("host registers command " + c.command, ext.includes('"' + c.command + '"'));
+ok("settings namespace stays xschem.*", Object.keys(props).every((k) => k.startsWith("xschem.")));
 
 // --- bundles parse ---
 function checks(file, esm) {

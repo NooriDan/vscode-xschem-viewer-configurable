@@ -15,6 +15,7 @@ function f(i) { a.register(i); }
 function U() { let i = ""; const e = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"; for (let t = 0; t < 32; t++) i += e.charAt(Math.floor(Math.random() * e.length)); return i; }
 
 // ----- configurable library-path support (fork addition) -----
+const xWarned = new Set(); // explicit libraryPaths already surfaced this session (warn once each)
 function xcfg() { return s.workspace.getConfiguration("xschem"); }
 function xWsFolder(uri) {
 	try { const wf = s.workspace.getWorkspaceFolder(uri); if (wf) return wf.uri.fsPath; } catch (e) { }
@@ -88,7 +89,13 @@ function xLibDirs(schematicUri) {
 	const push = (d, explicit) => {
 		const n = P.normalize(d);
 		if (dirs.includes(n)) return;
-		if (!isDir(n)) { if (dbg && explicit) console.warn("[xschem-viewer] libraryPaths entry not found, skipping: " + n); return; }
+		if (!isDir(n)) {
+			if (explicit) {
+				if (dbg) console.warn("[xschem-viewer] libraryPaths entry not found, skipping: " + n);
+				if (!xWarned.has(n)) { xWarned.add(n); try { s.window.showWarningMessage("Xschem Viewer: library path not found, skipping “" + n + "” (check xschem.libraryPaths)."); } catch (e) { } }
+			}
+			return;
+		}
 		dirs.push(n);
 	};
 	const raw = cfg.get("libraryPaths");
@@ -125,8 +132,8 @@ const o = class o {
 	static register(e) {
 		const t = new o(e),
 			r = s.window.registerCustomEditorProvider(o.viewType, t, { supportsMultipleEditorsPerDocument: !0, webviewOptions: { retainContextWhenHidden: !0 } }),
-			c = s.commands.registerCommand("xschem.runSimulation", () => { console.log(t.activeSchematic), t.activeSchematic && l.exec(`xschem -x -n -S -q ${t.activeSchematic.uri.fsPath}`, (u, d, m) => { }); }),
-			n = s.commands.registerCommand("xschem.editSchematic", () => { console.log(t.activeSchematic), t.activeSchematic && l.exec(`xschem ${t.activeSchematic.uri.fsPath}`, (u, d, m) => { }); });
+			c = s.commands.registerCommand("xschemViewerConfigurable.runSimulation", () => { console.log(t.activeSchematic), t.activeSchematic && l.exec(`xschem -x -n -S -q ${t.activeSchematic.uri.fsPath}`, (u, d, m) => { }); }),
+			n = s.commands.registerCommand("xschemViewerConfigurable.editSchematic", () => { console.log(t.activeSchematic), t.activeSchematic && l.exec(`xschem ${t.activeSchematic.uri.fsPath}`, (u, d, m) => { }); });
 		return e.subscriptions.push(r), e.subscriptions.push(c), e.subscriptions.push(n), r;
 	}
 	async openCustomDocument(e) { return { uri: e, dispose: () => { } }; }
@@ -191,7 +198,7 @@ const o = class o {
 			</html>`;
 	}
 };
-h(o, "viewType", "xschem.viewXschem");
+h(o, "viewType", "xschemViewerConfigurable.editor");
 let a = o;
 exports.XschemEditorProvider = a;
 exports.activate = f;

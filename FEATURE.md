@@ -79,19 +79,4 @@ the upstream resolver.
 
 ## Changelog
 
-- **1.2.2** — organize bundled PDK libraries into per-PDK subdirectories
-  (`xschem_lib/sky130/`, `xschem_lib/ihp-sg13g2/`) so PDK namespaces never share a directory; the
-  library map's `url` points at each subdir (schematic references like `sg13g2_pr/…` are unchanged).
-  The resolver test now extracts the real map from the bundle so it can't drift.
-- **1.2.1** — harden the `xschemrc`-append gate (found by adversarial review): when no workspace
-  folder is open the gate falls back to the rc's own directory instead of vanishing; the
-  containment check now resolves symlinks (an in-tree symlink can't smuggle in an out-of-tree PDK);
-  and the parser accepts the `[file dirname [file normalize [info script]]]` and quoted-append
-  idioms. Added tests for each.
-- **1.2.0** — bundle IHP SG13G2 symbols and route `sg13g2_*` to the bundle (render offline, no
-  config); absolute-symbol-reference support via a root map; `autoDetectXschemrc` now parses
-  in-workspace `append XSCHEM_LIBRARY_PATH` lines; committed test suite + CI; `THIRD_PARTY_NOTICES`.
-- **1.1.1** — `${workspaceFolder:NAME}` support; non-existent library paths skipped instead of
-  silently added; `includeWorkspaceFolders` default → `false` and scoped to the schematic's own
-  folder; corrected docs/example for `${workspaceFolder}` multi-root semantics.
-- **1.1.0** — initial configurable-library-path fork over upstream 1.0.1.
+See [CHANGELOG.md](CHANGELOG.md).

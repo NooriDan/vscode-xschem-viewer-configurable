@@ -1,5 +1,9 @@
 # Xschem Viewer (Configurable)
 
+[![CI](https://github.com/NooriDan/vscode-xschem-viewer-configurable/actions/workflows/ci.yml/badge.svg)](https://github.com/NooriDan/vscode-xschem-viewer-configurable/actions/workflows/ci.yml)
+[![Release](https://github.com/NooriDan/vscode-xschem-viewer-configurable/actions/workflows/release.yml/badge.svg)](https://github.com/NooriDan/vscode-xschem-viewer-configurable/releases)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE.txt)
+
 A fork of [`barakh.vscode-xschem-viewer`](https://github.com/barakhoffer/vscode-xschem-viewer)
 that adds **configurable XSchem library search paths**, so schematics render even when their
 symbols live in a PDK, a shared block library, or sibling folders — not just next to the `.sch`.
@@ -36,14 +40,19 @@ Other PDKs and private libraries are opt-in via `xschem.libraryPaths` (see below
 
 ## Install
 
-**From the prebuilt VSIX** (in this repo):
+Download the latest `.vsix` from the
+[**Releases**](https://github.com/NooriDan/vscode-xschem-viewer-configurable/releases) page (or use
+the copy committed in this repo), then:
 
 ```bash
-code --install-extension xschem-viewer-configurable-1.2.0.vsix --force
+code --install-extension xschem-viewer-configurable-<version>.vsix --force
 ```
 
 Then run **Developer: Reload Window** (Command Palette). Reloading is required after any
 (re)install for the new version and its settings schema to activate.
+
+> This is a standalone extension (id `NooriDan.xschem-viewer-configurable`). If you have the
+> upstream `barakh.vscode-xschem-viewer` installed, uninstall it to avoid two editors for `.sch`.
 
 ## Settings
 
@@ -108,6 +117,10 @@ CI runs the suite on Node 18/20/22 and builds the VSIX on every push/PR
 
 - Original extension © Barak Hoffer — [barakhoffer/vscode-xschem-viewer](https://github.com/barakhoffer/vscode-xschem-viewer)
 - Embedded viewer: [TinyTapeout/xschem-viewer](https://github.com/TinyTapeout/xschem-viewer)
-- This is a **modified** distribution; the changes are described in [FEATURE.md](FEATURE.md).
+- Bundled symbol libraries (SKY130, IHP SG13G2, xschem devices): see
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- This is a **modified** distribution; the changes are described in [FEATURE.md](FEATURE.md). It is
+  an independent fork and is **not affiliated with or endorsed by** the upstream authors.
 
-Licensed under the Apache License 2.0 — see [LICENSE.txt](LICENSE.txt).
+Modifications © 2026 NooriDan. Licensed under the Apache License 2.0 — see [LICENSE.txt](LICENSE.txt).
+Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).

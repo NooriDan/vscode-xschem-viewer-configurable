@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 	<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
 		<Metadata>
-			<Identity Language="en-US" Id="vscode-xschem-viewer" Version="__VERSION__" Publisher="barakh" />
+			<Identity Language="en-US" Id="xschem-viewer-configurable" Version="__VERSION__" Publisher="NooriDan" />
 			<DisplayName>Xschem Viewer (Configurable)</DisplayName>
 			<Description xml:space="preserve">Explore and visualize XSchem schematics in vscode, using xschem-viewer by Tiny Tapeout. Configurable-library-path fork: resolves PDK devices and sub-block symbols from XSCHEM_LIBRARY_PATH-style search roots.</Description>
 			<Tags>xschem,asic,vlsi,schematic,viewer</Tags>

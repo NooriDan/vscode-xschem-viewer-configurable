@@ -21,6 +21,7 @@ rsync -a \
   --exclude='.gitignore' \
   --exclude='FEATURE.md' \
   --exclude='TODO.md' \
+  --exclude='CONTRIBUTING.md' \
   --exclude='*.vsix' \
   ./ "$BUILD/extension/"
 
