@@ -1,0 +1,26 @@
+{
+	// Workspace settings for developing THIS extension. These are not the extension's own
+	// xschem.* settings — for those, see docs/CONFIGURATION.md.
+
+	// xschemrc is a Tcl script; without this it opens as plain text.
+	"files.associations": {
+		"xschemrc": "tcl"
+	},
+
+	// The bundled symbol libraries are ~7k small files. Keeping them out of search/watch makes
+	// find-in-files and the file watcher usable. They are still visible in the explorer.
+	"search.exclude": {
+		"dist/xschem_lib/**": true,
+		"dist/assets/wacl.js": true,
+		".fromsource/**": true,
+		"node_modules/**": true
+	},
+	"files.watcherExclude": {
+		"**/dist/xschem_lib/**": true,
+		"**/.fromsource/**": true,
+		"**/node_modules/**": true
+	},
+
+	// The committed sources use tabs (matching the built dist/extension.cjs they sit alongside).
+	"editor.insertSpaces": false
+}

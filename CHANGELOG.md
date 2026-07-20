@@ -28,6 +28,24 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   the shipped library map already routes `sg13g2_test*` at them.
 - **`docs/UPSTREAMING.md`** — ready-to-submit resolver patch and PR text. Nothing has been pushed;
   opening the PRs remains a human decision.
+- **`docs/CONFIGURATION.md`** — where settings actually go (all five are `window`-scoped, so
+  per-folder settings in a multi-root workspace are ignored — hence `${workspaceFolder:NAME}`),
+  variable expansion, how `PDK_ROOT` reaches the extension host, worked recipes, search-order
+  precedence, and Remote-SSH/WSL/dev-container notes.
+- **`docs/TROUBLESHOOTING.md`** — symptom-first guide covering every way resolution can fail, how to
+  read the debug log, and Workspace Trust.
+- **`.vscode/`** — `launch.json` (F5 runs an Extension Development Host, plus configs that open the
+  test fixtures directly) and workspace `settings.json` (`xschemrc` → Tcl, search/watcher excludes
+  for the ~7k bundled symbol files).
+- A **Commands** section in the README: the two editor-title buttons shell out to a local `xschem`
+  binary and currently fail silently if it isn't installed — previously undocumented.
+
+### Changed
+- **`xschem.includeWorkspaceFolders` no longer falls back to exposing every workspace folder.** When
+  a schematic sits outside all of them there is no "own" folder, and the previous fallback added
+  *all* of them — contradicting the documented contract ("only the schematic's own workspace folder,
+  never sibling roots") in exactly the case a user would least expect it. The schematic's own
+  directory remains a root regardless; anything wider is now explicit via `xschem.libraryPaths`.
 
 ### Fixed
 - Test fixtures `proj/altlib/widget.sym` and `proj/quotedlib/widget.sym` were missing the required
@@ -35,6 +53,17 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   manifest check now asserts every fixture has a well-formed xschem version header.
 - `build-vsix.sh` did not exclude `node_modules`, so packaging after any `npm i` silently shipped
   dependencies inside the VSIX. (Surfaced by installing Playwright for the smoke test.)
+- `xschem.resolveDebug`'s description pointed users at *Help ▸ Toggle Developer Tools* for the
+  resolver's output, but those lines are emitted **inside the webview** and need
+  *Developer: Open Webview Developer Tools*. Anyone debugging "symbol not found" would have looked
+  in the wrong console and seen nothing. Both sinks are now documented.
+- `THIRD_PARTY_NOTICES.md` deferred all licensing to per-file headers, but the 116 bundled
+  `xschem_lib/devices/` symbols are **GPL-2.0-or-later** (not Apache-2.0 like the extension), and
+  many other bundled symbols carry no header at all. Licenses are now stated per group explicitly.
+- Doc accuracy pass: `build-vsix.sh` also needs `rsync` and `build-from-source.sh` needs `git`;
+  `npm run fetch:ihp-tests --remove` never passed the flag (needs `--`); CI runs on PRs and pushes
+  to `main`, not "every push"; FEATURE.md claimed four settings at version "1.2.x"; "every fetch is
+  guarded" excluded the deliberately-unguarded top-level `https://` branch.
 - The resolver test extracted `fetchContent` by literal signature (`async fetchContent(i){`), which
   silently stops matching after any rebuild renames the parameter. It now matches by regex and
   resolves minified helper identifiers through a scope proxy, so it validates the committed bundle

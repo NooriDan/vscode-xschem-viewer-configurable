@@ -56,12 +56,12 @@
 				"xschem.includeWorkspaceFolders": {
 					"type": "boolean",
 					"default": false,
-					"markdownDescription": "When enabled, allow the viewer to load symbol/schematic files from the schematic's **own** workspace folder (enabling relative `../` sub-block references anywhere within that folder). Off by default to keep the webview's file-read scope minimal — the schematic's directory plus the configured `#xschem.libraryPaths#` (and auto-detected `xschemrc` roots) are always available regardless of this setting. Only the schematic's own workspace folder is exposed, never sibling roots of a multi-root workspace."
+					"markdownDescription": "When enabled, allow the viewer to load symbol/schematic files from the schematic's **own** workspace folder (enabling relative `../` sub-block references anywhere within that folder). Off by default to keep the webview's file-read scope minimal — the schematic's directory plus the configured `#xschem.libraryPaths#` (and auto-detected `xschemrc` roots) are always available regardless of this setting.\n\nOnly the schematic's own workspace folder is ever exposed, never sibling roots of a multi-root workspace. A schematic opened from **outside** every workspace folder has no owning folder, so this setting adds nothing for it — use `#xschem.libraryPaths#` in that case."
 				},
 				"xschem.resolveDebug": {
 					"type": "boolean",
 					"default": false,
-					"description": "Log every symbol-resolution attempt to the webview Developer Tools console (Help > Toggle Developer Tools). Use this to debug \"symbol not found\" problems and see exactly which paths were tried."
+					"markdownDescription": "Log every symbol-resolution attempt, to debug \"symbol not found\" problems and see exactly which paths were tried.\n\nOutput lands in **two different consoles**:\n\n- **Resolution attempts** (`'ref' <- bundled …`, `'ref' <- libraryPath …`, `NOT FOUND …`) are logged by the viewer inside the webview. Open that console with **Developer: Open Webview Developer Tools** from the Command Palette — *Help ▸ Toggle Developer Tools* shows the editor's own console, not the webview's.\n- **Skipped/refused paths** (a `#xschem.libraryPaths#` entry that isn't a directory, a PDK `source` refused by the open-PDK allowlist or an unset variable) are logged by the extension host — see *Help ▸ Toggle Developer Tools*, or the **Log (Extension Host)** channel in the Output panel.\n\nSee [TROUBLESHOOTING.md](https://github.com/NooriDan/vscode-xschem-viewer-configurable/blob/main/docs/TROUBLESHOOTING.md)."
 				}
 			}
 		},

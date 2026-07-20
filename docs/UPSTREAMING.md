@@ -61,7 +61,7 @@ wants.
 > ### Change
 >
 > - A failed or throwing fetch becomes a **miss that falls through** to the next candidate instead
->   of aborting. Every `fetch` is wrapped so a CSP rejection can't throw out of the chain. The last
+>   of aborting. Every fetch in the fallback chain is wrapped so a CSP rejection can't throw out of it. The leading explicit-`https://` branch is deliberately left unwrapped — an explicit URL that cannot be fetched is a real error, not a miss to fall through from. The last
 >   non-ok response is kept, so a genuine miss still reports a real status instead of a bare throw.
 > - Optional host-provided globals, read at fetch time (all no-ops when unset, so default behavior
 >   is unchanged):
@@ -120,4 +120,7 @@ behavior:
 - [ ] Re-run `./build-from-source.sh` against upstream's current `main` and re-cut patch 0001 if it
       has drifted from the pinned `4a2bc83`.
 - [ ] Confirm the DCO/CLA situation for each repo.
-- [ ] Both upstreams are Apache-2.0, as is this fork — no license friction expected.
+- [ ] Both upstreams are Apache-2.0, as is this fork's own code — no friction expected for the code
+      changes themselves. Note separately that the bundled `xschem_lib/devices/` symbols are
+      **GPL-2.0-or-later** (upstream xschem); that matters only for PR 2, whose scope mentions
+      bundling libraries.

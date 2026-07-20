@@ -9,15 +9,22 @@ Thanks for your interest in improving **Xschem Viewer (Configurable)**!
   (xschem compiled to WASM). The symbol resolver lives in `index.js`.
 - `dist/xschem_lib/` — bundled symbol libraries, namespaced per PDK (`sky130/`, `ihp-sg13g2/`) plus
   generic `devices/`, `stdcells/`, `mips_cpu/`.
-- `test/` — dependency-free Node tests + fixtures.
+- `patches/xschem-viewer/` — the resolver as readable TypeScript patches against upstream, plus the
+  vite config used to rebuild. Applied by `build-from-source.sh`.
+- `scripts/` — optional helpers (`fetch-ihp-testlibs.sh`).
+- `test/` — dependency-free Node tests + fixtures. `test/smoke/` is the Playwright render test
+  (**not** part of `npm test`).
+- `docs/` — configuration, troubleshooting, and upstreaming guides.
 - `packaging/`, `build-vsix.sh` — VSIX packaging.
+- `.github/workflows/` — `ci.yml` (tests + VSIX), `smoke.yml` (headless render), `release.yml`.
 
 See [FEATURE.md](FEATURE.md) for how symbol resolution and each setting work, and [TODO.md](TODO.md)
 for planned work.
 
-> Note: the `dist/assets/*` viewer is a **built artifact** (the upstream TypeScript/WASM source is
-> not vendored here). Resolver changes are currently applied to that bundle directly; rebuilding
-> from source is a tracked TODO.
+> The `dist/assets/*` viewer is a built artifact, but it is **reproducible**: `./build-from-source.sh`
+> clones the pinned upstream, applies `patches/xschem-viewer/*.patch`, and rebuilds. Prefer editing
+> the patch over hand-editing the minified bundle. `dist/extension.cjs` is still maintained directly
+> as built output — porting it back to TypeScript is a tracked TODO.
 
 ## Development
 
@@ -27,6 +34,39 @@ No dependencies are required to run the tests:
 npm test          # resolver + config + manifest/integrity checks
 ./build-vsix.sh   # build the installable VSIX (needs node + zip)
 ```
+
+### Debugging without installing
+
+Press <kbd>F5</kbd> (or *Run and Debug* → **Run Extension (Development Host)**) to launch a second
+VS Code window running the extension straight from this folder. `.vscode/launch.json` also has
+configurations that open the test fixtures or the smoke-test schematic directly.
+
+Breakpoints in `dist/extension.cjs` hit in that window. The viewer itself runs in the webview —
+inspect it with *Developer: Open Webview Developer Tools* and turn on `xschem.resolveDebug`. Note
+the two log destinations described in [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#turn-on-diagnostics).
+
+### Changing the resolver
+
+Edit `patches/xschem-viewer/0001-configurable-library-search-roots.patch`, then:
+
+```bash
+./build-from-source.sh              # build + diff against the committed bundle (stages only)
+./build-from-source.sh --install    # overwrite dist/assets, then run npm test
+npm run test:smoke                  # ALWAYS verify a real render after --install
+```
+
+`npm test` checks resolution logic, not that the WASM viewer still paints — so a bundle swap needs
+the smoke test (or a manual open) before committing.
+
+### Rendering verification
+
+```bash
+npm i --no-save playwright && npx playwright install chromium
+npm run test:smoke                  # --headed --keep-open to watch it
+```
+
+Needs `openssl`: the harness serves over HTTPS because the resolver loads the top-level schematic via
+its `https://` branch.
 
 Install a local build:
 
