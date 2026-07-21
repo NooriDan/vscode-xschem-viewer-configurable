@@ -1,6 +1,6 @@
 {
 	"name": "xschem-viewer-configurable",
-	"version": "1.4.0",
+	"version": "1.5.0",
 	"displayName": "Xschem Viewer (Configurable)",
 	"description": "View XSchem .sch/.sym schematics in VS Code with configurable library search paths. Bundles the SKY130 and IHP SG13G2 device symbols so PDK schematics render with zero config, and can follow an xschemrc into an installed open PDK.",
 	"icon": "xschem_logo.png",
@@ -15,7 +15,7 @@
 	"qna": false,
 	"type": "module",
 	"scripts": {
-		"test": "node test/resolver.test.cjs && node test/config.test.cjs && node test/manifest.test.cjs && node test/parser.test.cjs",
+		"test": "node test/resolver.test.cjs && node test/config.test.cjs && node test/manifest.test.cjs && node test/parser.test.cjs && node test/navigation.test.cjs",
 		"package": "./build-vsix.sh",
 		"fetch:ihp-tests": "./scripts/fetch-ihp-testlibs.sh",
 		"test:smoke": "node test/smoke/render-smoke.mjs"
@@ -89,22 +89,66 @@
 				"command": "xschemViewerConfigurable.editSchematic",
 				"title": "Open in Xschem",
 				"icon": "$(pencil)"
+			},
+			{
+				"command": "xschemViewerConfigurable.goUp",
+				"title": "Xschem: Go Up in Hierarchy",
+				"icon": "$(arrow-up)"
+			},
+			{
+				"command": "xschemViewerConfigurable.goDown",
+				"title": "Xschem: Go Down in Hierarchy",
+				"icon": "$(arrow-down)"
 			}
 		],
 		"menus": {
 			"editor/title": [
 				{
+					"command": "xschemViewerConfigurable.goUp",
+					"group": "navigation@1",
+					"when": "activeCustomEditorId == xschemViewerConfigurable.editor && xschemViewer.canGoUp"
+				},
+				{
+					"command": "xschemViewerConfigurable.goDown",
+					"group": "navigation@2",
+					"when": "activeCustomEditorId == xschemViewerConfigurable.editor && xschemViewer.canGoDown"
+				},
+				{
 					"command": "xschemViewerConfigurable.runSimulation",
-					"group": "navigation",
+					"group": "navigation@3",
 					"when": "resourceExtname == .sch"
 				},
 				{
 					"command": "xschemViewerConfigurable.editSchematic",
-					"group": "navigation",
+					"group": "navigation@3",
 					"when": "resourceExtname == .sch"
 				}
+			],
+			"commandPalette": [
+				{
+					"command": "xschemViewerConfigurable.goUp",
+					"when": "activeCustomEditorId == xschemViewerConfigurable.editor"
+				},
+				{
+					"command": "xschemViewerConfigurable.goDown",
+					"when": "activeCustomEditorId == xschemViewerConfigurable.editor"
+				}
 			]
-		}
+		},
+		"keybindings": [
+			{
+				"command": "xschemViewerConfigurable.goUp",
+				"key": "alt+left",
+				"mac": "alt+left",
+				"when": "activeCustomEditorId == xschemViewerConfigurable.editor && xschemViewer.canGoUp"
+			},
+			{
+				"command": "xschemViewerConfigurable.goDown",
+				"key": "alt+right",
+				"mac": "alt+right",
+				"when": "activeCustomEditorId == xschemViewerConfigurable.editor && xschemViewer.canGoDown"
+			}
+		]
 	},
 	"author": "NooriDan",
 	"publisher": "NooriDan",

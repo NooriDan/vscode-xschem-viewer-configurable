@@ -204,16 +204,77 @@ function xLibDirs(schematicUri) {
 	}
 	return dirs;
 }
+// ----- hierarchy navigation (fork addition) -----
+// Descending is already history-based upstream: clicking a component calls
+// `history.pushState({path}, '', ?file=…)` and the root component restores from `popstate`. So the
+// whole descend stack exists in the webview already — there was just no way to walk back up it.
+// This wires that stack to the editor-title buttons and Alt+Left/Right.
+//
+// "Up" is history.back(), NOT a parent lookup. A .sym is instantiated in arbitrarily many parents,
+// so there is no unique parent to compute; the stack you descended is the only correct answer, and
+// it is what xschem itself walks.
+//
+// The script below is injected inline (nonce'd) into the webview head and MUST run before the app's
+// module script so its pushState wrapper is in place before the first descend. It is exported for
+// test/navigation.test.cjs, which evaluates it against a fake window/history — a browser-free guard
+// on the depth arithmetic, which is the only part with real logic in it.
+const NAV_SCRIPT = `
+(function () {
+	const vscode = acquireVsCodeApi();
+	// Position within OUR stack. The initial entry (pushed above to carry ?file=) is depth 0.
+	let depth = 0;
+	// Highest entry currently reachable forward. A fresh pushState truncates browser forward history,
+	// so it also truncates ours — otherwise "down" would stay enabled pointing at a dead entry.
+	let top = 0;
+	const post = () => vscode.postMessage({ type: "xschem.nav.state", canUp: depth > 0, canDown: depth < top });
+	const origPush = history.pushState.bind(history);
+	history.pushState = function (state, title, url) {
+		depth += 1;
+		top = depth;
+		const r = origPush({ ...(state || {}), __xdepth: depth }, title, url);
+		// Must report here too: pushState fires no event, so without this the buttons stay stale
+		// until the next popstate — i.e. "up" would not light up until after you had already gone up.
+		post();
+		return r;
+	};
+	// A popstate entry with no __xdepth is the initial one (pushed before this wrapper installed).
+	addEventListener("popstate", (e) => {
+		depth = (e.state && typeof e.state.__xdepth === "number") ? e.state.__xdepth : 0;
+		post();
+	});
+	addEventListener("message", (e) => {
+		const m = e.data;
+		if (!m || m.type !== "xschem.nav") return;
+		// Guard on OUR depth, not just the host's when-clause. A context key can go stale (it is set
+		// asynchronously and is global to the window), and history.back() at depth 0 would walk the
+		// iframe off the app entirely into a blank document with no way back.
+		if (m.dir === "up") { if (depth > 0) history.back(); }
+		else if (m.dir === "down") { if (depth < top) history.forward(); }
+		else if (m.dir === "report") post();
+	});
+	post();
+})();
+`;
 // -------------------------------------------------------------
 
 const o = class o {
-	constructor(e) { h(this, "activeSchematic"); this.context = e; }
+	constructor(e) { h(this, "activeSchematic"); h(this, "activePanel"); this.context = e; }
+	// Push the enablement keys the editor-title buttons and keybindings are gated on. Called with
+	// both false whenever no Xschem editor is active, so a stale "enabled" never leaks into another
+	// editor's title bar — the keys are global to the window, not per-editor.
+	static setNavContext(canUp, canDown) {
+		s.commands.executeCommand("setContext", "xschemViewer.canGoUp", !!canUp);
+		s.commands.executeCommand("setContext", "xschemViewer.canGoDown", !!canDown);
+	}
+	nav(dir) { var e; (e = this.activePanel) == null || e.webview.postMessage({ type: "xschem.nav", dir }); }
 	static register(e) {
 		const t = new o(e),
 			r = s.window.registerCustomEditorProvider(o.viewType, t, { supportsMultipleEditorsPerDocument: !0, webviewOptions: { retainContextWhenHidden: !0 } }),
 			c = s.commands.registerCommand("xschemViewerConfigurable.runSimulation", () => { console.log(t.activeSchematic), t.activeSchematic && l.exec(`xschem -x -n -S -q ${t.activeSchematic.uri.fsPath}`, (u, d, m) => { }); }),
-			n = s.commands.registerCommand("xschemViewerConfigurable.editSchematic", () => { console.log(t.activeSchematic), t.activeSchematic && l.exec(`xschem ${t.activeSchematic.uri.fsPath}`, (u, d, m) => { }); });
-		return e.subscriptions.push(r), e.subscriptions.push(c), e.subscriptions.push(n), r;
+			n = s.commands.registerCommand("xschemViewerConfigurable.editSchematic", () => { console.log(t.activeSchematic), t.activeSchematic && l.exec(`xschem ${t.activeSchematic.uri.fsPath}`, (u, d, m) => { }); }),
+			gu = s.commands.registerCommand("xschemViewerConfigurable.goUp", () => t.nav("up")),
+			gd = s.commands.registerCommand("xschemViewerConfigurable.goDown", () => t.nav("down"));
+		return e.subscriptions.push(r), e.subscriptions.push(c), e.subscriptions.push(n), e.subscriptions.push(gu), e.subscriptions.push(gd), r;
 	}
 	async openCustomDocument(e) { return { uri: e, dispose: () => { } }; }
 	async resolveCustomEditor(e, t, r) {
@@ -239,8 +300,33 @@ const o = class o {
 		}
 		t.webview.options = { enableScripts: !0, localResourceRoots: roots };
 		this.activeSchematic = e;
-		t.onDidChangeViewState((c) => { c.webviewPanel.active && (this.activeSchematic = e); });
-		t.onDidDispose(() => { var c; ((c = this.activeSchematic) == null ? void 0 : c.uri.toString()) === e.uri.toString() && (this.activeSchematic = void 0); });
+		this.activePanel = t;
+		// Latest depth report from THIS panel. Cached so re-activating an editor restores its button
+		// state immediately; the "report" round-trip below refreshes it in case the webview moved on
+		// while hidden (retainContextWhenHidden keeps it alive and interactive).
+		let navState = { canUp: !1, canDown: !1 };
+		t.webview.onDidReceiveMessage((c) => {
+			if (!c || c.type !== "xschem.nav.state") return;
+			navState = { canUp: !!c.canUp, canDown: !!c.canDown };
+			if (this.activePanel === t) o.setNavContext(navState.canUp, navState.canDown);
+		});
+		t.onDidChangeViewState((c) => {
+			if (c.webviewPanel.active) {
+				this.activeSchematic = e;
+				this.activePanel = t;
+				o.setNavContext(navState.canUp, navState.canDown);
+				t.webview.postMessage({ type: "xschem.nav", dir: "report" });
+			} else if (this.activePanel === t) {
+				// Another editor took focus. Drop the keys rather than leaving this panel's stack
+				// advertised on someone else's title bar.
+				this.activePanel = void 0;
+				o.setNavContext(!1, !1);
+			}
+		});
+		t.onDidDispose(() => {
+			var c; ((c = this.activeSchematic) == null ? void 0 : c.uri.toString()) === e.uri.toString() && (this.activeSchematic = void 0);
+			this.activePanel === t && (this.activePanel = void 0, o.setNavContext(!1, !1));
+		});
 		t.webview.html = await this.getHtmlForWebview(e, t.webview);
 	}
 	async getHtmlForWebview(e, t) {
@@ -271,6 +357,7 @@ const o = class o {
     			targetUrl.searchParams.set('file', "${t.asWebviewUri(e.uri)}");
     			window.history.pushState(null, '', targetUrl.toString());
 				<\/script>
+				<script nonce="${n}">${NAV_SCRIPT}<\/script>
 				<script type="module" crossorigin src="${r}"><\/script>
     			<link rel="stylesheet" crossorigin href="${c}">
 			</head>
@@ -285,3 +372,4 @@ h(o, "viewType", "xschemViewerConfigurable.editor");
 let a = o;
 exports.XschemEditorProvider = a;
 exports.activate = f;
+exports.__navScript = NAV_SCRIPT; // test-only handle; see test/navigation.test.cjs

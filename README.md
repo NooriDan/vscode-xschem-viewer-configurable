@@ -143,9 +143,22 @@ Three gates apply, because this is the one place the extension reads out of tree
 Only the PDK's `libs.tech/xschem` directory is exposed to the webview, never `$PDK_ROOT` itself.
 Enable `xschem.resolveDebug` to see what was followed or refused.
 
+## Navigating the hierarchy
+
+Click any component that has a schematic of its own to **descend** into it. To come back **up**, use
+the ↑ button on the editor title bar or press <kbd>Alt</kbd>+<kbd>Left</kbd>; ↓ /
+<kbd>Alt</kbd>+<kbd>Right</kbd> goes back down again.
+
+Up walks the stack of schematics you actually descended through — the same thing xschem does, and the
+only well-defined answer: a `.sym` can be instantiated in any number of parents, so there is no single
+"parent schematic" to jump to. The buttons appear only when there is somewhere to go, so at the top of
+the hierarchy you see neither. Descending somewhere new discards the forward stack, as in a browser.
+
+Each editor tab keeps its own stack, and that stack survives the tab being hidden in the background.
+
 ## Commands
 
-Two toolbar buttons appear on the editor title bar for `.sch` files. Both shell out to a **local
+Two more toolbar buttons appear on the editor title bar for `.sch` files. Both shell out to a **local
 `xschem` installation** on your `PATH` — they are not provided by the viewer:
 
 | Button | Command | Runs |
