@@ -3,6 +3,23 @@
 All notable changes to **Xschem Viewer (Configurable)** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.1]
+
+### Fixed
+- **Webview CSP was missing `font-src`.** With no directive it fell back to `default-src 'none'`,
+  blocking any `data:`-URI font (VS Code's own injected webview chrome uses one) and throwing a CSP
+  console warning. Added `font-src <webview csp source> data:;` alongside the existing `img-src`.
+
+- **`Run Simulation` / `Open in Xschem` failures were silent.** The `child_process` callback discarded
+  `error`/`stdout`/`stderr` entirely, so a missing `xschem` binary (commonly: it lives in a conda env
+  that the GUI-launched extension host's `PATH` doesn't include — see TROUBLESHOOTING.md) failed with
+  no feedback at all. Failures now surface as an error notification with the real stderr/message, plus
+  a PATH hint when the failure looks like "command not found".
+
+- Switched both commands from `child_process.exec` (a string-interpolated shell command line) to
+  `execFile` with an argument array, so a schematic path containing a space or shell metacharacter no
+  longer breaks or gets shell-interpreted.
+
 ## [1.5.0]
 
 ### Added

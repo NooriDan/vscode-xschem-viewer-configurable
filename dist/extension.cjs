@@ -267,11 +267,25 @@ const o = class o {
 		s.commands.executeCommand("setContext", "xschemViewer.canGoDown", !!canDown);
 	}
 	nav(dir) { var e; (e = this.activePanel) == null || e.webview.postMessage({ type: "xschem.nav", dir }); }
+	// child_process.exec errors used to be silently discarded, so a missing `xschem` binary (e.g. VS
+	// Code launched from a GUI/dock and not inheriting the shell's PATH — see TROUBLESHOOTING.md)
+	// failed with zero feedback. Surface it instead. execFile (not exec) also avoids building a shell
+	// command line by string interpolation, so a schematic path with a space or shell metacharacter
+	// no longer breaks — or is unsafely interpreted as shell syntax.
+	static runXschemCmd(label, args) {
+		l.execFile("xschem", args, (err, stdout, stderr) => {
+			if (!err) return;
+			const notFound = err.code === "ENOENT" || /command not found|not recognized as an internal/i.test(String(stderr || err.message || ""));
+			const detail = String(stderr || err.message || err).trim();
+			const hint = notFound ? " 'xschem' was not found on PATH. The extension host inherits VS Code's own launch environment, not your shell's — see Troubleshooting in the README/docs if VS Code wasn't started from a terminal that has 'xschem' on PATH." : "";
+			s.window.showErrorMessage(`Xschem: ${label} failed: ${detail}${hint}`);
+		});
+	}
 	static register(e) {
 		const t = new o(e),
 			r = s.window.registerCustomEditorProvider(o.viewType, t, { supportsMultipleEditorsPerDocument: !0, webviewOptions: { retainContextWhenHidden: !0 } }),
-			c = s.commands.registerCommand("xschemViewerConfigurable.runSimulation", () => { console.log(t.activeSchematic), t.activeSchematic && l.exec(`xschem -x -n -S -q ${t.activeSchematic.uri.fsPath}`, (u, d, m) => { }); }),
-			n = s.commands.registerCommand("xschemViewerConfigurable.editSchematic", () => { console.log(t.activeSchematic), t.activeSchematic && l.exec(`xschem ${t.activeSchematic.uri.fsPath}`, (u, d, m) => { }); }),
+			c = s.commands.registerCommand("xschemViewerConfigurable.runSimulation", () => { t.activeSchematic && o.runXschemCmd("Run Simulation", ["-x", "-n", "-S", "-q", t.activeSchematic.uri.fsPath]); }),
+			n = s.commands.registerCommand("xschemViewerConfigurable.editSchematic", () => { t.activeSchematic && o.runXschemCmd("Open in Xschem", [t.activeSchematic.uri.fsPath]); }),
 			gu = s.commands.registerCommand("xschemViewerConfigurable.goUp", () => t.nav("up")),
 			gd = s.commands.registerCommand("xschemViewerConfigurable.goDown", () => t.nav("down"));
 		return e.subscriptions.push(r), e.subscriptions.push(c), e.subscriptions.push(n), e.subscriptions.push(gu), e.subscriptions.push(gd), r;
@@ -345,7 +359,7 @@ const o = class o {
 			<head>
 				<meta charset="UTF-8">
 				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src ${t.cspSource};
-				img-src ${t.cspSource} blob:; style-src ${t.cspSource}; script-src ${t.cspSource} 'nonce-${n}' 'unsafe-eval';">
+				img-src ${t.cspSource} blob:; font-src ${t.cspSource} data:; style-src ${t.cspSource}; script-src ${t.cspSource} 'nonce-${n}' 'unsafe-eval';">
 				<meta name="viewport" content="width=device-width, initial-scale=1.0">
     			<title>Xschem Viewer Online</title>
 				<base href="${t.asWebviewUri(s.Uri.joinPath(this.context.extensionUri, "dist"))}/">

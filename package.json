@@ -1,6 +1,6 @@
 {
 	"name": "xschem-viewer-configurable",
-	"version": "1.5.0",
+	"version": "1.5.1",
 	"displayName": "Xschem Viewer (Configurable)",
 	"description": "View XSchem .sch/.sym schematics in VS Code with configurable library search paths. Bundles the SKY130 and IHP SG13G2 device symbols so PDK schematics render with zero config, and can follow an xschemrc into an installed open PDK.",
 	"icon": "xschem_logo.png",
