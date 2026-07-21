@@ -23,6 +23,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import Module from "node:module";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..", "..");
@@ -46,7 +47,23 @@ const EXPECTED_SYMBOLS = [
 	// value-blind, so a regression can still render 8/8 symbols and pass. test/parser.test.cjs is
 	// what actually fails -- and it runs in the required matrix, unlike this workflow.
 	"devices/code_shown.sym",
+	// NOT listed: the fixture's own sub.sym. It sits beside the schematic, so it resolves off
+	// baseURL without ever entering the library resolver — the only thing that emits these log
+	// lines. Its rendering is covered instead by the navigation round-trip below, which fails
+	// outright if the [data-symbol="sub.sym"] group was never drawn.
 ];
+
+// The navigation script the extension host injects, pulled from the module that ships it rather than
+// re-typed here — a copy would drift and quietly stop testing the real thing.
+const { __navScript: NAV_SCRIPT } = await (async () => {
+	const req = Module.createRequire(import.meta.url);
+	const origLoad = Module._load;
+	Module._load = function (request, ...rest) {
+		if (request === "vscode") return { window: {}, commands: {}, workspace: { getConfiguration: () => ({ get: () => void 0 }) }, Uri: {} };
+		return origLoad.call(this, request, ...rest);
+	};
+	try { return req("../../dist/extension.cjs"); } finally { Module._load = origLoad; }
+})();
 
 const MIME = {
 	".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
@@ -82,6 +99,13 @@ function harnessHtml(fileUrl) {
 	t.searchParams.set('file', ${JSON.stringify(fileUrl)});
 	window.history.pushState(null, '', t.toString());
 </script>
+<script>
+	// Stand in for the VS Code webview API the injected script talks to, recording what it would have
+	// posted to the extension host so the assertions can read the real button-enablement stream.
+	window.__navPosts = [];
+	window.acquireVsCodeApi = () => ({ postMessage: (m) => window.__navPosts.push(m) });
+</script>
+<script>${NAV_SCRIPT}</script>
 <script type="module" crossorigin src="/dist/assets/index.js"><\/script>
 <link rel="stylesheet" crossorigin href="/dist/assets/index.css">
 </head>
@@ -180,6 +204,55 @@ try {
 	failures.push(`render did not complete within ${TIMEOUT_MS}ms: ${e.message}`);
 }
 
+// --- hierarchy navigation: a real descend, then a real ascend -----------------------------------
+// The unit test (test/navigation.test.cjs) models the History API; this drives the genuine one, in a
+// browser, through the actual viewer. What it adds over the model is everything the model stubs: that
+// the script parses and runs, that wrapping the app's pushState does not break the app's own descend,
+// that a real history.back() fires a real popstate, and that the parent actually re-renders.
+//
+// It is NOT the guard on preserving the app's `{path}` state — the app's popstate handler falls back
+// to the ?file= query param, so dropping that state still renders correctly here. The unit test is
+// what pins that down, and it matters because the fallback is upstream code we do not control.
+let navInfo = null;
+if (renderInfo) {
+	const fileParam = () => page.evaluate(() => new URL(location.href).searchParams.get("file"));
+	const lastPost = () => page.evaluate(() => window.__navPosts[window.__navPosts.length - 1] ?? null);
+	try {
+		const atTop = await lastPost();
+		if (!atTop || atTop.canUp !== false) failures.push(`nav: expected canUp=false at the top, got ${JSON.stringify(atTop)}`);
+
+		// Descend the way a user does: click the component. Dispatched rather than page.click()'d
+		// because the group sits under a pan/zoom transform, so hit-testing a real cursor position
+		// would make this test about coordinate math instead of navigation.
+		const before = await fileParam();
+		await page.evaluate(() => document.querySelector('[data-symbol="sub.sym"]')
+			.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+		await page.waitForFunction(() => /sub\.sch$/.test(new URL(location.href).searchParams.get("file") || ""), null, { timeout: TIMEOUT_MS });
+		await page.waitForSelector("svg", { state: "visible", timeout: TIMEOUT_MS });
+
+		const descended = await lastPost();
+		if (!descended || descended.canUp !== true) failures.push(`nav: expected canUp=true after descending, got ${JSON.stringify(descended)}`);
+
+		// Ascend exactly as the editor-title button does: post the message the extension host posts.
+		await page.evaluate(() => window.postMessage({ type: "xschem.nav", dir: "up" }, "*"));
+		await page.waitForFunction((want) => new URL(location.href).searchParams.get("file") === want, before, { timeout: TIMEOUT_MS });
+		await page.waitForSelector("svg", { state: "visible", timeout: TIMEOUT_MS });
+
+		// Back at the parent the viewer must have REDRAWN it, not left a blank canvas.
+		const backShapes = await page.evaluate(() =>
+			document.querySelectorAll("svg line, svg polygon, svg polyline, svg rect, svg circle, svg path, svg text, svg image").length);
+		if (backShapes < MIN_SHAPES) failures.push(`nav: parent redrew with only ${backShapes} shapes (expected >= ${MIN_SHAPES}) — ascend produced a blank editor`);
+
+		const ascended = await lastPost();
+		if (!ascended || ascended.canUp !== false || ascended.canDown !== true)
+			failures.push(`nav: expected {canUp:false, canDown:true} after ascending, got ${JSON.stringify(ascended)}`);
+
+		navInfo = { backShapes, ascended };
+	} catch (e) {
+		failures.push(`hierarchy navigation round-trip failed: ${e.message}`);
+	}
+}
+
 // --- assertions --------------------------------------------------------------------------------
 const resolved = new Set();
 for (const line of consoleLines) {
@@ -201,6 +274,7 @@ const tclNoise = consoleLines.filter((l) => l.startsWith("tcleval failed:")).len
 console.log("=== render smoke ===");
 console.log(`  svg             : ${renderInfo ? `${renderInfo.shapes} shapes, bbox ${renderInfo.w}x${renderInfo.h}` : "NONE"}`);
 console.log(`  symbols resolved: ${resolved.size}/${EXPECTED_SYMBOLS.length}${missing.length ? ` (missing: ${missing.join(", ")})` : ""}`);
+console.log(`  hierarchy nav   : ${navInfo ? `descend + ascend round-trip OK (parent redrew ${navInfo.backShapes} shapes)` : "NOT EXERCISED"}`);
 console.log(`  page errors     : ${pageErrors.length}`);
 console.log(`  tcleval notices : ${tclNoise} (expected; ngspice annotations, not render errors)`);
 

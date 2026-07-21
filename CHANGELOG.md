@@ -3,6 +3,34 @@
 All notable changes to **Xschem Viewer (Configurable)** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0]
+
+### Added
+- **Hierarchy navigation.** Descending into a sub-schematic was already possible (click a component);
+  there was no way back. Adds ↑/↓ editor-title buttons, <kbd>Alt</kbd>+<kbd>Left</kbd> /
+  <kbd>Alt</kbd>+<kbd>Right</kbd> keybindings, and matching command-palette entries.
+
+  Up is a stack pop, not a parent lookup — a `.sym` may be instantiated in arbitrarily many parents,
+  so the descend stack is the only well-defined "up", and it is what xschem itself walks. That stack
+  already existed: upstream's root component navigates via `history.pushState`/`popstate`, so this
+  wires a small injected script to that history rather than adding parallel state. Buttons are gated
+  on context keys reported by the webview, per editor tab, and cleared when no Xschem editor is
+  active so one tab's stack never advertises itself on another's toolbar. The script guards on its
+  own depth as well as the context key, because `history.back()` at depth 0 would walk the webview
+  iframe off the app into a blank document.
+
+- **`test/navigation.test.cjs`** — drives the injected script against a fake `window`/`history` that
+  models the one contract it depends on (pushState truncates forward history). Dependency-free, so it
+  runs in the required Node 18/20/22 matrix. It caught a real bug during development: the pushState
+  wrapper updated its state but never reported it, so ↑ stayed hidden until the *next* navigation.
+
+- The **render smoke test** now also drives a real descend (clicking the component) and a real ascend
+  (posting the message the title button posts), and asserts the parent redraws. New `sub.sym` /
+  `sub.sch` fixtures give `smoke.sch` one component with a child schematic. Mutation-tested both
+  ways: breaking `up` fails the smoke test, and clobbering the app's history state fails the unit
+  test while the smoke test stays green — the app's `?file=` fallback hides it, which is precisely
+  why that assertion lives in the unit suite.
+
 ## [1.4.0]
 
 ### Added
