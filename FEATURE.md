@@ -8,7 +8,49 @@ works. Planned work and bugs live in [TODO.md](TODO.md).
 Configurable library search paths for the in-editor XSchem viewer, so symbols outside the
 schematic's own folder (PDK devices, shared block libraries, sibling blocks) resolve and render.
 The **SkyWater SKY130** and **IHP SG13G2** device libraries are bundled and render with no
-configuration.
+configuration. Hierarchy navigation adds a way back **up** out of a sub-schematic — upstream can
+only descend.
+
+## Hierarchy navigation
+
+Upstream already descends: clicking a component whose `.sym` has a sibling `.sch` navigates into it.
+There was no way back, and no UI on the descend stack at all.
+
+| Action | Editor title | Keybinding | Command |
+|---|---|---|---|
+| Up | ↑ | <kbd>Alt</kbd>+<kbd>Left</kbd> | `xschemViewerConfigurable.goUp` |
+| Down | ↓ | <kbd>Alt</kbd>+<kbd>Right</kbd> | `xschemViewerConfigurable.goDown` |
+
+**Up is a stack pop, not a parent lookup.** A `.sym` may be instantiated in arbitrarily many parent
+schematics, so "the parent" is not a well-defined destination; the stack you descended through is,
+and it is what xschem itself walks. Descending somewhere new truncates the forward stack, as in a
+browser.
+
+The stack was already there — upstream's root component navigates with `history.pushState({path})`
+and restores on `popstate` — so this feature wires that existing history to UI rather than keeping
+parallel state:
+
+- `dist/extension.cjs` injects a nonce'd script (`NAV_SCRIPT`) that wraps `history.pushState` to
+  track depth, listens for `popstate`, and reports `{canUp, canDown}` to the extension host over
+  `postMessage`. It must be injected **before** the app's module script so the wrapper is installed
+  ahead of the first descend.
+- The host turns those reports into the `xschemViewer.canGoUp` / `canGoDown` context keys the
+  buttons and keybindings are gated on, and posts `{type:"xschem.nav", dir}` back to drive
+  `history.back()` / `forward()`.
+- Context keys are **window-global**, so the host clears them whenever no Xschem editor is active
+  and re-asks the newly-active panel to report. Otherwise one tab's stack would light up buttons on
+  another tab's toolbar. Each panel caches its own last report; `retainContextWhenHidden` keeps a
+  backgrounded panel's stack alive.
+
+Two guards worth keeping:
+
+- **The script checks its own depth, not just the context key.** Context keys are set
+  asynchronously and can go stale; `history.back()` at depth 0 walks the webview iframe *off the
+  app* into a blank document with no way back short of reopening the file.
+- **The `pushState` wrapper reports immediately.** `pushState` fires no event, so without an
+  explicit report the buttons would not update until the *next* navigation — i.e. ↑ would stay
+  hidden on exactly the first descend, the one that needs it. This was a real bug, caught by
+  `test/navigation.test.cjs`.
 
 ## Symbol resolution order
 
@@ -115,7 +157,9 @@ the pipeline above; `dist/extension.cjs` is still maintained as built output):
   (and optionally the schematic's own workspace folder) to the webview `localResourceRoots`, and
   injects the roots, the absolute-ref root map, and the debug flag into the webview HTML via a
   nonce'd inline script.
-- **`package.json`** — declares the five `xschem.*` settings (see the table above; `package.json` is the source of truth).
+- **`package.json`** — declares the five `xschem.*` settings (see the table above; `package.json` is
+  the source of truth), plus the hierarchy-navigation commands, editor-title buttons, keybindings and
+  their `when` gates.
 
 ## Verification
 
@@ -136,6 +180,12 @@ bundled libraries and fixtures:
   intact, the IHP remap is complete, bundled IHP symbols retain their Apache-2.0 headers, the
   open-PDK allowlist contains no foundry name, and every test fixture has a parseable xschem
   version header.
+- **`test/navigation.test.cjs`** — the injected `NAV_SCRIPT`, run in a `vm` against a fake
+  `window`/`history` that models the one contract it relies on: `pushState` truncates forward
+  history. Asserts the posted `{canUp, canDown}` stream (what actually drives the buttons), that
+  "up" at depth 0 and "down" past the top are **no-ops** rather than walking the iframe off the
+  app, that a descend after an ascend drops the stale forward entry, and that the wrapper extends
+  the app's `{path}` state instead of replacing it.
 
 The resolver test extracts the method by **regex**, not a literal signature, so it validates the
 committed bundle and a `build-from-source.sh` rebuild equally (the minifier renames identifiers on
@@ -161,8 +211,18 @@ Two things the harness must get right, both learned the hard way:
 - **It waits for the `<svg>` to become *visible*, not merely to exist.** The viewer renders to SVG
   and holds it at `visibility: hidden` until the render completes, so visibility is the done signal.
 
-Current result: **8/8 symbols resolved, 110 SVG shapes, bbox 1180×513, 0 page errors.** The check is
-mutation-tested — hiding one bundled symbol makes it exit non-zero and name the missing symbol.
+It also drives a **hierarchy round-trip**: a real click-descend into the fixture's `sub.sch`, then a
+real ascend via the same message the ↑ button posts, asserting the parent redraws rather than
+returning a blank canvas. That is the only place the injected script meets a genuine History API.
+Note the split in what each suite can catch, established by mutation: breaking `up` fails the smoke
+test, but clobbering the app's `{path}` history state does **not** — the app falls back to the
+`?file=` query param — so `test/navigation.test.cjs` is the guard for that half.
+
+Current result: **8/8 symbols resolved, 114 SVG shapes, bbox 1180×513, 0 page errors, hierarchy
+round-trip green.** (The fixture's own `sub.sym` sits beside the schematic, so it resolves off
+`baseURL` without entering the library resolver and is deliberately absent from the 8 — the
+round-trip fails outright if it never drew.) The check is mutation-tested — hiding one bundled
+symbol makes it exit non-zero and name the missing symbol.
 The eighth symbol carries a bare-inner-quote property value (patch 0003), but note the smoke
 assertions are value-blind: `test/parser.test.cjs` is the actual guard for tokenization.
 (`tcleval failed:` console lines are expected noise: symbols carry ngspice `gm`/`id`/`vgs`
