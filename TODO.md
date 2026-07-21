@@ -29,14 +29,21 @@ Planned improvements and known limitations. See [FEATURE.md](FEATURE.md) for cur
       install stays lean (1.4.0).
 - [x] **Headless render smoke test** — `npm run test:smoke` + the `Render smoke` workflow drive the
       real WASM viewer in headless Chromium and assert the SVG actually renders. **Verified green**:
-      8/8 symbols resolved (IHP nmos+pmos, SKY130 nfet, stock devices, `code_shown`), 110 SVG
+      8/8 symbols resolved (IHP nmos+pmos, SKY130 nfet, stock devices, `code_shown`), 114 SVG
       shapes, bbox 1180×513, 0 page errors — and mutation-tested (hiding one bundled symbol makes
-      it exit 1) (1.4.0).
+      it exit 1) (1.4.0; extended in 1.5.0 with the hierarchy round-trip, which is what raised the
+      shape count).
 - [x] **xschem-faithful property tokenization** — an unescaped `"` toggles quote parity rather than
       delimiting the value, so a property carrying inner quotes (an ngspice comment in a
       `code_shown` block) no longer aborts the entire file into a blank canvas. Local patch 0003;
       guarded by `test/parser.test.cjs`, which asserts exact parsed values plus a whole-corpus parse
       invariant and runs in the required Node matrix (1.4.0).
+- [x] **Hierarchy navigation** — ↑/↓ editor-title buttons, <kbd>Alt</kbd>+<kbd>Left/Right</kbd>, and
+      palette commands for walking back out of a sub-schematic; upstream could only descend. Up is a
+      stack pop, not a parent lookup (a `.sym` has arbitrarily many parents), reusing the
+      `pushState`/`popstate` history the viewer already navigates with. Guarded by
+      `test/navigation.test.cjs` in the required matrix, plus a real click-descend/ascend round-trip
+      in the smoke test (1.5.0).
 
 ## Planned improvements
 
