@@ -3,6 +3,20 @@
 All notable changes to **Xschem Viewer (Configurable)** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.2]
+
+### Fixed
+- **A rectangle's `fill=no` was ignored, rendering it solid.** `SVGRenderer.ts` only treated the
+  literal string `'false'` as "don't fill"; every other value -- including xschem's own
+  `no`/`off`/`0` conventions -- fell through to filled. Real xschem (`save.c load_box()` +
+  `editprop.c strboolcmp()`) treats `false`/`off`/`no`/`0` (case-insensitively) as unfilled and
+  everything else, including an absent property, as filled. A symbol that draws its outline as
+  lines plus an explicit `fill=no` bounding box on the same layer -- e.g. `ref_amp.sym` in
+  analog-db -- rendered as a solid block that hid the artwork underneath it, since the box is
+  appended to the SVG after the lines and painted on top. Fixed in
+  `patches/xschem-viewer/0004-fix-rect-fill-boolean-matching.patch`, which mirrors xschem's real
+  boolean matching instead of the single literal-string comparison.
+
 ## [1.5.1]
 
 ### Fixed

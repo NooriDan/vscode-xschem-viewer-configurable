@@ -1,0 +1,36 @@
+--- a/src/render/SVGRenderer.ts
++++ b/src/render/SVGRenderer.ts
+@@ -13,7 +13,24 @@ import { parse } from '../parser/xschem-parser';
+ const fontScale = 50;
+ const junctionRadius = 3;
+
++// xschem's own loader (src/save.c load_box(), StefanSchippers/xschem) treats a rectangle's "fill"
++// property as FILLED by default, unless strboolcmp() (src/editprop.c) recognizes the value as
++// false-equivalent: "false"/"off"/"no" (case-insensitive) or a numeric "0". Anything else --
++// including an absent property, "true"/"yes"/"on", or a nonzero digit string -- falls through to
++// filled. The previous check here only matched the literal string 'false', so a box explicitly
++// marked `fill=no` (the value analog-db's bounding-box outlines use) still rendered solid, hiding
++// any line/polygon artwork drawn on the same layer beneath it.
++function isXschemFillFalse(fillProp: string | undefined): boolean {
++  if (fillProp == null) return false;
++  const value = fillProp.trim();
++  if (/^-?\d+$/.test(value)) return parseInt(value, 10) === 0;
++  const lower = value.toLowerCase();
++  if (lower === 'true' || lower === 'on' || lower === 'yes') return false;
++  if (lower === 'false' || lower === 'off' || lower === 'no') return true;
++  return value === 'false';
++}
++
+ interface XSchemTransform {
+   flip: boolean;
+   rotation: number;
+ }
+@@ -182,7 +199,7 @@ export class SVGRenderer extends EventTarget {
+           rect.setAttribute('width', Math.abs(item.x2 - item.x1).toString());
+           rect.setAttribute('height', Math.abs(item.y1 - item.y2).toString());
+           rect.setAttribute('stroke', this.colors[item.layer]);
+-          if (item.properties.fill !== 'false') {
++          if (!isXschemFillFalse(item.properties.fill)) {
+             rect.setAttribute('fill', this.colors[item.layer]);
+           }
+           parent.appendChild(rect);
